@@ -6,7 +6,7 @@ and `doctor` and the manifest schema are the public API.
 
 ## [Unreleased]
 
-## [1.1.0] - 2026-10-05
+## [1.1.0] - 2026-10-06
 
 ### Added
 
