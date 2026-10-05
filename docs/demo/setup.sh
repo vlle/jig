@@ -6,6 +6,7 @@ rm -rf "$workspace"
 mkdir -p "$workspace"
 cd "$workspace"
 git init -q
+printf 'module example.com/shop\n\ngo 1.24\n' > go.mod
 
 export JIG_ROOT="$workspace" JIG_LOG="$workspace/.runs.jsonl"
 jig init >/dev/null 2>&1

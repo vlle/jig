@@ -21,8 +21,11 @@ writes a line.
 - **Scaffold** — `jig new <id>` refuses when a similar tool already exists; otherwise it
   writes a Go, Go fan-out, bash or node skeleton with flags, timeout, dry-run, run log and
   the terminal animation kit.
+- **Adopt** — `jig add tools/*.sh` registers the scripts you already have and works out
+  how to run each one.
 - **Keep it honest** — `jig doctor` finds scripts with no manifest, manifests with no
-  script, stale indexes and copy-pasted files.
+  script, unfinished manifests, stale indexes and copy-pasted files, and exits 1 so it can
+  guard CI.
 
 Scripts stay where they are. jig only knows about them.
 
@@ -34,17 +37,19 @@ Paste this into Claude Code, Codex, Cursor or any agent with a shell:
 Install jig (https://github.com/vlle/jig), a registry for the scripts in my workspace,
 and wire it into how you work. Ask before anything that writes outside the workspace.
 
-1. Install: `go install github.com/vlle/jig@latest`, then check that `jig help` runs.
-   If `jig` is not on PATH, use "$(go env GOPATH)/bin/jig" for now and tell me which
-   shell rc file needs the PATH line.
+1. Install: `go install github.com/vlle/jig@latest` (Go 1.24+), or without Go the
+   prebuilt binary for this OS and CPU from https://github.com/vlle/jig/releases/latest.
+   Check that `jig version` runs. If `jig` is not on PATH, use its full path for now and
+   tell me which shell rc file needs the PATH line.
 2. Ask me which directory is my workspace (default: the root of the current repository)
    and run `jig init <dir>` there. If the workspace has environment names such as
    staging and production, ask me for them and set `envs` and `prod_targets` in jig.yml.
 3. Run `jig doctor`. For each script it reports without a manifest, read the script and
-   propose a manifest: id, path, run, summary (the problem it answers, one line), why,
-   safety (read-only / writes / destructive, honestly), targets, tags. Write the ones I
-   approve into the registry directory; put files that are not tools into .jigignore.
-   Repeat until `jig doctor` is clean, then run `jig index`.
+   propose: summary (the problem it answers, one line), why, safety (read-only / writes /
+   destructive, honestly), targets, tags. Register the ones I approve with
+   `jig add <path> --summary "..." --why "..." --safety ... --targets a,b --tags a,b`;
+   put files that are not tools into .jigignore. Repeat until `jig doctor` exits 0,
+   then run `jig index`.
 4. Add the output of `jig agent rules` to your persistent instructions: CLAUDE.md for
    Claude Code, AGENTS.md for Codex and most others, at the workspace root unless I ask
    for the user-level file. Show me the diff before writing.
@@ -60,15 +65,36 @@ and wire it into how you work. Ask before anything that writes outside the works
 
 ## Install by hand
 
+With Go 1.24 or newer:
+
 ```bash
 go install github.com/vlle/jig@latest
+```
+
+Or a prebuilt binary for macOS or Linux (amd64, arm64):
+
+```bash
+os=$(uname -s | tr '[:upper:]' '[:lower:]')
+arch=$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/')
+curl -fsSL "https://github.com/vlle/jig/releases/latest/download/jig_${os}_${arch}.tar.gz" | tar -xz jig
+sudo install jig /usr/local/bin/     # or any directory on PATH
+jig version
+```
+
+Every release lists `checksums.txt` next to the archives. Then, in your workspace:
+
+```bash
 cd ~/work            # the directory that holds your repositories, or a single repo
-jig init             # writes jig.yml and .jig/registry/
-jig doctor           # lists the scripts that are already there without a manifest
+jig init             # writes jig.yml and .jig/registry/, lists scripts that already exist
+jig add scripts/check-stock.sh --summary "item is published but shows out of stock" --safety read-only
+jig index            # TOOLS.md: the catalogue people and agents read
+jig doctor           # exits 0 when the registry is in order
 ```
 
 `jig` finds its workspace the way git finds a repository: the nearest `jig.yml` above the
 current directory. `JIG_ROOT` overrides it.
+
+jig runs on macOS and Linux. `jig run` starts tools through `bash`, so on Windows use WSL.
 
 ## Commands
 
@@ -80,10 +106,12 @@ jig show stock-diag        # what it does, how to run it, flags, safety, targets
 jig src stock-diag         # the source (through bat if it is installed)
 jig run stock-diag -- -item 280982988
 jig new stock-recount --kind go --dir catalog/scripts/stock-recount
-jig doctor                 # problems in the registry
+jig add ops/scripts/*.sh   # register scripts that already exist
+jig doctor                 # problems in the registry; exit status 1 when there are any
 jig index                  # regenerate TOOLS.md
 jig demo                   # the animation kit the scaffolds ship with
 jig agent rules|skill      # text for your coding agent
+jig version
 ```
 
 `ls`, `show` and `doctor` take `--json`. That output is meant for agents and stays stable.
@@ -91,6 +119,25 @@ jig agent rules|skill      # text for your coding agent
 In the home screen, start typing to search; `enter` opens the browser, `ctrl+d` runs the
 doctor, `esc` quits. In the browser: `j`/`k`, `/` search, `tab` docs ⇄ source, `enter`
 run, `e` open in `$EDITOR`, `d` doctor, `y` copy the command, `esc` back home.
+
+## Adopting the scripts you already have
+
+`jig init` and `jig doctor` list every script without a manifest. `jig add` registers them:
+
+```bash
+jig add ops/scripts/rotate-keys.sh --summary "signing key is about to expire" \
+  --why "keys live 90 days; this rotates them in the vault and restarts the signers" \
+  --safety destructive --targets prod --tags keys,ops
+jig add tools/*.py         # several at once; summary and why stay TODO for you to fill in
+```
+
+The id comes from the file name, or from the directory for `main.go`, `run.js` and the
+like; `--id` overrides it. `run` is written the way jig will execute it: `./x.sh` for an
+executable, otherwise `bash`, `python3`, `node` or `go run`, with `workdir` pointing at the
+Go module when the tool lives in a nested one. Without `--safety` the manifest says
+`writes`, because nobody has checked yet. `jig doctor` reports the manifest as unfinished
+until `summary` and `why` are filled in. If one path fails, nothing is written. Files that
+are not tools go into `.jigignore`.
 
 ## Manifests
 
@@ -124,8 +171,9 @@ Required: `id`, `path`, `summary`, `run`. Unknown keys are an error, so typos su
 `jig doctor` instead of being ignored.
 
 `run` starts in the **root of the git repository** that holds `path`, or in the directory
-of `path` when it is not under git. `jig doctor` checks that every relative path in `run`
-resolves from there.
+of `path` when it is not under git; `workdir` is relative to that. `jig doctor` checks that
+every relative path in `run` resolves from there. `jig new` and `jig add` work it out for
+you.
 
 `safety: writes` or `destructive` together with a target listed in `prod_targets` makes
 `jig run` refuse without `--yes`. This is behaviour, not documentation. `guard: self`
@@ -165,6 +213,10 @@ or in any parent: one glob, file name or directory prefix per line.
 Every scaffold validates its flags with clear messages, has an overall timeout, starts in
 dry-run, prints progress to stderr and results to stdout, writes a run log line and takes
 `-env` when `envs` is set in `jig.yml`.
+
+A Go scaffold joins the Go module above it, so it can import that module's packages. With
+no module between the tool and the repository root, `jig new` writes a `go.mod` into the
+tool directory and `run` becomes `go run .` from there.
 
 The Go scaffolds also get `screen.go` — the same file as [`internal/anim`](internal/anim/anim.go),
 stdlib only — so a tool looks good while it works:
@@ -208,6 +260,23 @@ without escape codes. `jig demo` shows all of it.
   outside the workspace, ignored paths and files inside a registered tool pass through.
   `JIG_HOOK=off` disables it.
 
+## In CI
+
+`jig doctor` exits with status 1 when it finds a problem: a broken manifest, a script
+without one, an unfinished manifest, a `run` that does not resolve, or a TOOLS.md that no
+longer matches the registry. TOOLS.md depends only on the manifests, so commit it and let
+CI hold the line:
+
+```yaml
+- uses: actions/setup-go@v7
+  with:
+    go-version: stable
+- run: go install github.com/vlle/jig@v1.1.0
+- run: jig doctor
+```
+
+Findings of level `info`, such as a repository checked out twice, never fail the run.
+
 ## Run log
 
 Every `jig` command appends one JSON line to `~/.local/state/jig/runs.jsonl`
@@ -248,6 +317,9 @@ vhs docs/demo.tape         # re-record docs/demo.gif
 The end-to-end suite in `e2e/` runs the real binary against a temporary workspace for every
 scenario, with the test binary itself standing in as the tool, so it sees exactly the argv,
 working directory and environment a tool would get.
+
+[CONTRIBUTING.md](CONTRIBUTING.md) has the conventions, [RELEASING.md](RELEASING.md) the
+release checklist, [CHANGELOG.md](CHANGELOG.md) what changed.
 
 ## License
 

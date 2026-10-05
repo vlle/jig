@@ -17,9 +17,12 @@ the next session, so it gets rewritten from scratch. jig exists to stop that.
    The scaffold already has fail-fast flag validation, a timeout, dry-run by default,
    a spinner or fan-out panel that degrades to plain lines off a TTY, progress on stderr
    and results on stdout. Write the logic into it; do not rewrite that plumbing.
+6. The script already exists but has no manifest (`jig doctor` lists those) → register it
+   with `jig add <path> --summary "..." --why "..." --safety ... --tags a,b` instead of
+   writing the YAML by hand; it works out `run` and `workdir`.
 
-**Finish the manifest before handing off.** `jig new` writes `<registry>/<id>.yml` with two
-TODOs. Replace both:
+**Finish the manifest before handing off.** `jig new` and `jig add` write
+`<registry>/<id>.yml`; replace the TODOs they leave:
 - `summary` — one line phrased as the problem it answers ("published item shows out of
   stock"), not as the implementation ("script for items").
 - `why` — what it does and why this way; non-obvious invariants go here.
@@ -28,7 +31,8 @@ TODOs. Replace both:
   itself (dry-run by default). Remove `guard: self` if the tool loses its dry-run.
 - `targets`, `tags`, `env` (a `kind: env` profile id for secrets), `args` for every flag.
 
-Then `jig doctor` must be clean and `jig index` regenerates TOOLS.md.
+Then `jig index` regenerates TOOLS.md and `jig doctor` must exit 0 (it exits 1 on any
+problem, including a manifest that still says TODO).
 
 **Never** put secrets in a script or a manifest — load them through an `env` profile.
 `jig run <id>` needs the exact id; everything after `--` goes to the tool untouched.

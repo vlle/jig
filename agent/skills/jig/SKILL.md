@@ -27,6 +27,10 @@ there is no `jig.yml` above the current directory, say so and stop — do not im
   This is the default. Create a new tool only when extending really does not work, and say why.
 - **A tool is close** → show it and ask the user: extend it or create a new one.
   Do not decide for them.
+- **The script exists but has no manifest** (`jig doctor` lists it as "script without
+  manifest") → do not scaffold, register it: read it, then
+  `jig add <path> --summary "..." --why "..." --safety ... --targets a,b --tags a,b`
+  and go to step 5. `jig add` works out `run` and `workdir`; do not write the YAML by hand.
 - **Nothing fits** → step 3.
 
 ## Step 3 — scaffold
@@ -49,7 +53,8 @@ plumbing.** Drop flags the tool has no use for (`-dry-run` on a read-only probe)
 
 ## Step 4 — fill the manifest
 
-`jig new` writes `<registry>/<id>.yml`. Replace both TODOs:
+`jig new` writes `<registry>/<id>.yml`. Replace both TODOs — `jig doctor` reports the
+manifest as unfinished until you do:
 
 - `summary` — one line in the words of the problem, not the implementation.
   Good: "published item shows out of stock in the catalogue". Bad: "items script".
@@ -68,9 +73,9 @@ jig doctor
 jig index
 ```
 
-`doctor` must be clean. The usual miss is "run target not found from workdir": the path in
-`run` is relative to the root of the git repository the tool lives in, or to the tool's own
-directory when it is not under git.
+`doctor` must exit 0. The usual miss is "run target not found from workdir": the path in
+`run` is relative to the root of the git repository the tool lives in (plus `workdir`), or
+to the tool's own directory when it is not under git.
 
 ## Rules
 
