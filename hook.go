@@ -65,8 +65,8 @@ func hookVerdict(input hookInput) string {
 	if err != nil {
 		return ""
 	}
-	rel, err := filepath.Rel(cfg.Root, path)
-	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+	rel, inside := within(cfg.Root, path)
+	if !inside {
 		return ""
 	}
 

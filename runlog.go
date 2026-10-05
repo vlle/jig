@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"runtime/debug"
 	"strconv"
 	"strings"
 	"time"
@@ -46,28 +45,6 @@ func newRunRecord(started time.Time) runRecord {
 		PID:    os.Getpid(),
 		Rev:    buildRevision(),
 	}
-}
-
-func buildRevision() string {
-	info, ok := debug.ReadBuildInfo()
-	if !ok {
-		return ""
-	}
-	revision, dirty := "", ""
-	for _, setting := range info.Settings {
-		switch setting.Key {
-		case "vcs.revision":
-			revision = setting.Value
-			if len(revision) > 12 {
-				revision = revision[:12]
-			}
-		case "vcs.modified":
-			if setting.Value == "true" {
-				dirty = "+dirty"
-			}
-		}
-	}
-	return revision + dirty
 }
 
 func runlogPath() string {

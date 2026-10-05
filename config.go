@@ -173,6 +173,14 @@ func fileExists(path string) bool {
 	return err == nil && !stat.IsDir()
 }
 
+func within(base, target string) (string, bool) {
+	rel, err := filepath.Rel(base, target)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", false
+	}
+	return rel, true
+}
+
 func relTo(base, target string) string {
 	if rel, err := filepath.Rel(base, target); err == nil {
 		return rel

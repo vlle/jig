@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"os"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -132,4 +134,73 @@ func (t Tool) hasTag(tag string) bool {
 		}
 	}
 	return false
+}
+
+var flowSafe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/@+-]*$`)
+
+func manifestYAML(m Manifest) string {
+	var out strings.Builder
+	field := func(key, value string) {
+		if value != "" {
+			fmt.Fprintf(&out, "%s: %s\n", key, yamlScalar(value))
+		}
+	}
+
+	field("id", m.ID)
+	if m.Kind != "tool" {
+		field("kind", m.Kind)
+	}
+	field("path", m.Path)
+	field("summary", m.Summary)
+	field("run", m.Run)
+	field("workdir", m.Workdir)
+	fmt.Fprintf(&out, "safety: %s  # read-only | writes | destructive\n", yamlScalar(m.Safety))
+	fmt.Fprintf(&out, "targets: %s\n", yamlList(m.Targets))
+	field("guard", m.Guard)
+	field("env", m.Env)
+	if why := strings.TrimSpace(m.Why); why != "" {
+		out.WriteString("why: |\n")
+		for line := range strings.SplitSeq(why, "\n") {
+			if line = strings.TrimRight(line, " \t\r"); line == "" {
+				out.WriteString("\n")
+				continue
+			}
+			out.WriteString("  " + line + "\n")
+		}
+	}
+	fmt.Fprintf(&out, "tags: %s\n", yamlList(m.Tags))
+	field("status", m.Status)
+	field("ticket", m.Ticket)
+	return out.String()
+}
+
+func yamlScalar(value string) string {
+	raw, err := yaml.Marshal(value)
+	if err != nil {
+		return strconv.Quote(value)
+	}
+	return strings.TrimSuffix(string(raw), "\n")
+}
+
+func yamlList(values []string) string {
+	items := make([]string, 0, len(values))
+	for _, value := range values {
+		var parsed any
+		if flowSafe.MatchString(value) && yaml.Unmarshal([]byte(value), &parsed) == nil && parsed == value {
+			items = append(items, value)
+			continue
+		}
+		items = append(items, strconv.Quote(value))
+	}
+	return "[" + strings.Join(items, ", ") + "]"
+}
+
+func splitList(value string) []string {
+	var items []string
+	for item := range strings.SplitSeq(value, ",") {
+		if item = strings.TrimSpace(item); item != "" {
+			items = append(items, item)
+		}
+	}
+	return items
 }

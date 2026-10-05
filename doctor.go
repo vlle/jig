@@ -58,7 +58,10 @@ func cmdDoctor(cfg Config, args []string) error {
 		if report.Findings == nil {
 			report.Findings = []finding{}
 		}
-		return emitJSON(report)
+		if err := emitJSON(report); err != nil {
+			return err
+		}
+		return report.verdict()
 	}
 
 	s, err := newScreen("doctor")
@@ -74,6 +77,13 @@ func cmdDoctor(cfg Config, args []string) error {
 	s.Close()
 
 	writeDoctor(os.Stdout, report, color)
+	return report.verdict()
+}
+
+func (r doctorReport) verdict() error {
+	if r.problems() > 0 {
+		return exitError{code: 1}
+	}
 	return nil
 }
 
@@ -102,6 +112,7 @@ func diagnose(cfg Config, progress func(files int)) doctorReport {
 
 	covered := map[string]bool{}
 	coveredDirs := map[string]bool{}
+	var unfinished []string
 	for _, tool := range result.Tools {
 		stat, err := os.Stat(tool.TargetAbs)
 		if err != nil {
@@ -119,6 +130,17 @@ func diagnose(cfg Config, progress func(files int)) doctorReport {
 		if target := missingRunTarget(tool); target != "" {
 			add(finding{Kind: "run target not found from workdir", Detail: tool.ID + ": " + tool.Run, Paths: []string{tool.WorkdirAbs}})
 		}
+		if todo := placeholders(tool.Manifest); len(todo) > 0 {
+			unfinished = append(unfinished, relTo(cfg.Root, tool.ManifestPath)+": "+strings.Join(todo, ", "))
+		}
+	}
+	if len(unfinished) > 0 {
+		add(finding{
+			Kind:   "unfinished manifest",
+			Detail: fmt.Sprintf("%d — summary or why is still TODO", len(unfinished)),
+			Paths:  unfinished,
+			Fix:    "say what problem the tool answers and why it works this way",
+		})
 	}
 
 	repos := map[string]repoInfo{}
@@ -157,7 +179,7 @@ func diagnose(cfg Config, progress func(files int)) doctorReport {
 			Kind:   "script without manifest",
 			Detail: fmt.Sprintf("%d", len(orphans)),
 			Paths:  orphans,
-			Fix:    "register with a manifest, or list it in " + ignoreFile,
+			Fix:    "register with `jig add <path>`, or list it in " + ignoreFile,
 		})
 	}
 
@@ -175,7 +197,7 @@ func diagnose(cfg Config, progress func(files int)) doctorReport {
 	if indexStale(cfg, result.Tools) {
 		add(finding{
 			Kind:   "TOOLS.md is stale",
-			Detail: "the registry changed after the last generation",
+			Detail: "it does not match the registry",
 			Paths:  []string{relTo(cfg.Root, cfg.Index)},
 			Fix:    "jig index",
 		})
@@ -506,6 +528,16 @@ func missingRunTarget(tool Tool) string {
 		}
 	}
 	return ""
+}
+
+func placeholders(m Manifest) []string {
+	var todo []string
+	for _, field := range [][2]string{{"summary", m.Summary}, {"why", m.Why}} {
+		if strings.HasPrefix(strings.TrimSpace(field[1]), "TODO") {
+			todo = append(todo, field[0])
+		}
+	}
+	return todo
 }
 
 func shortRemote(remote string) string {

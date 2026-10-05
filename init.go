@@ -66,7 +66,7 @@ func cmdInit(args []string) error {
 		if orphans == 1 {
 			noun = "script has"
 		}
-		fmt.Printf("%d %s no manifest yet — `jig doctor` lists them, register the ones worth keeping.\n", orphans, noun)
+		fmt.Printf("%d %s no manifest yet — `jig doctor` lists them, `jig add <path>` registers the ones worth keeping.\n", orphans, noun)
 	}
 	fmt.Println("next: `jig new <id>` for a new tool, `jig index` for TOOLS.md, `jig agent rules` for your coding agent")
 	return nil

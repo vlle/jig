@@ -3,9 +3,12 @@ package e2e
 import (
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestRunPassesArgumentsUntouched(t *testing.T) {
@@ -465,4 +468,143 @@ func TestDemoPlain(t *testing.T) {
 	r.ok(t)
 	contains(t, "stderr", r.stderr, "shard-6: connection refused")
 	lacks(t, "stderr", r.stderr, "\x1b[")
+}
+
+func TestVersionWorksAnywhere(t *testing.T) {
+	t.Parallel()
+	s := newSandbox(t)
+	for _, command := range []string{"version", "--version"} {
+		r := s.jigWith(t.TempDir(), []string{"JIG_ROOT="}, "", command)
+		r.ok(t)
+		if !strings.HasPrefix(r.stdout, "jig ") {
+			t.Fatalf("%s: %q", command, r.stdout)
+		}
+		contains(t, command, r.stdout, runtime.GOOS+"/"+runtime.GOARCH)
+	}
+}
+
+func TestDoctorExitCode(t *testing.T) {
+	t.Parallel()
+	s := newSandbox(t)
+	if r := s.jig("doctor"); r.code != 1 {
+		t.Fatalf("a stale index is a problem, doctor exited %d", r.code)
+	}
+	s.jig("index").ok(t)
+	s.jig("doctor").ok(t)
+}
+
+func TestIndexIsComparedByContent(t *testing.T) {
+	t.Parallel()
+	s := newSandbox(t)
+	s.jig("index").ok(t)
+	first, _ := os.ReadFile(s.path("TOOLS.md"))
+	lacks(t, "TOOLS.md", string(first), "updated")
+
+	later := time.Now().Add(time.Hour)
+	if err := os.Chtimes(s.path(".jig/registry/probe-ro.yml"), later, later); err != nil {
+		t.Fatal(err)
+	}
+	if item := findKind(s.doctor(), "TOOLS.md is stale"); item != nil {
+		t.Fatal("a newer mtime with the same content is not stale")
+	}
+
+	s.jig("index").ok(t)
+	second, _ := os.ReadFile(s.path("TOOLS.md"))
+	if string(first) != string(second) {
+		t.Fatal("jig index is not deterministic")
+	}
+
+	manifest, _ := os.ReadFile(s.path(".jig/registry/probe-ro.yml"))
+	s.write(".jig/registry/probe-ro.yml", strings.Replace(string(manifest), "summary: fixture probe-ro", "summary: counts widgets", 1))
+	if findKind(s.doctor(), "TOOLS.md is stale") == nil {
+		t.Fatal("a changed summary must make the index stale")
+	}
+}
+
+func TestFreshWorkspaceIsClean(t *testing.T) {
+	t.Parallel()
+	s := newSandbox(t)
+	dir := t.TempDir()
+	s.jigWith(dir, []string{"JIG_ROOT="}, "", "init").ok(t)
+	r := s.jigWith(dir, []string{"JIG_ROOT="}, "", "doctor")
+	r.ok(t)
+	contains(t, "doctor", r.stdout, "clean")
+}
+
+func TestNewManifestIsUnfinished(t *testing.T) {
+	t.Parallel()
+	s := newSandbox(t)
+	s.jig("new", "fresh-tool", "--kind", "bash", "--dir", "tools/fresh-tool").ok(t)
+	item := findKind(s.doctor(), "unfinished manifest")
+	if item == nil || len(item.Paths) != 1 || item.Paths[0] != ".jig/registry/fresh-tool.yml: summary, why" {
+		t.Fatalf("got %+v", item)
+	}
+}
+
+func TestGoScaffoldsBuild(t *testing.T) {
+	t.Parallel()
+	for _, envs := range []string{"", "envs: [qa, live]\n"} {
+		for _, kind := range []string{"go", "go-parallel"} {
+			t.Run(kind+" "+strings.TrimSpace(envs), func(t *testing.T) {
+				t.Parallel()
+				s := newSandbox(t)
+				s.write("jig.yml", envs)
+				s.jig("new", "fresh-"+kind, "--kind", kind, "--dir", "tools/fresh").ok(t)
+
+				if !s.exists("tools/fresh/go.mod") {
+					t.Fatal("a scaffold outside any Go module needs its own go.mod")
+				}
+				tool := s.show("fresh-" + kind)
+				if tool["run"] != "go run ." || tool["workdir_abs"] != s.path("tools/fresh") {
+					t.Fatalf("run=%v from %v", tool["run"], tool["workdir_abs"])
+				}
+				goBuild(t, s.path("tools/fresh"), ".")
+			})
+		}
+	}
+}
+
+func TestGoScaffoldJoinsTheModuleAboveIt(t *testing.T) {
+	t.Parallel()
+	s := newRepoSandbox(t)
+	s.write("go.mod", "module example.com/workspace\n\ngo 1.24\n")
+	s.jig("new", "inner-tool", "--dir", "svc/scripts/inner-tool").ok(t)
+
+	if s.exists("svc/scripts/inner-tool/go.mod") {
+		t.Fatal("go.mod written inside an existing module")
+	}
+	if run := s.show("inner-tool")["run"]; run != "go run ./svc/scripts/inner-tool" {
+		t.Fatalf("run=%v", run)
+	}
+	goBuild(t, s.root, "./svc/scripts/inner-tool")
+}
+
+func TestShellScaffoldsParse(t *testing.T) {
+	t.Parallel()
+	s := newSandbox(t)
+	s.write("jig.yml", "envs: [qa, live]\n")
+	s.jig("new", "shell-tool", "--kind", "bash", "--dir", "tools/shell-tool").ok(t)
+	s.jig("new", "node-tool", "--kind", "node", "--dir", "tools/node-tool").ok(t)
+
+	check := func(name string, args ...string) {
+		if _, err := exec.LookPath(name); err != nil {
+			t.Logf("%s is not installed, skipping", name)
+			return
+		}
+		if out, err := exec.Command(name, args...).CombinedOutput(); err != nil {
+			t.Fatalf("%s %v: %v\n%s", name, args, err, out)
+		}
+	}
+	check("bash", "-n", s.path("tools/shell-tool/main.sh"))
+	check("node", "--check", s.path("tools/node-tool/run.js"))
+}
+
+func goBuild(t *testing.T, dir, pkg string) {
+	t.Helper()
+	build := exec.Command("go", "build", "-o", os.DevNull, pkg)
+	build.Dir = dir
+	build.Env = append(os.Environ(), "GOWORK=off", "GOFLAGS=-mod=mod -buildvcs=false")
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("go build %s in %s: %v\n%s", pkg, dir, err, out)
+	}
 }

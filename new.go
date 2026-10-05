@@ -24,8 +24,9 @@ type scaffoldFile struct {
 }
 
 type scaffold struct {
-	files []scaffoldFile
-	run   string
+	files  []scaffoldFile
+	run    string
+	module bool
 }
 
 const animFile = "@anim"
@@ -37,7 +38,7 @@ var scaffolds = map[string]scaffold{
 			{name: "screen.go", template: animFile},
 			{name: "runlog.go", template: "templates/shared/runlog.go.tmpl"},
 		},
-		run: "go run %s",
+		module: true,
 	},
 	"go-parallel": {
 		files: []scaffoldFile{
@@ -45,7 +46,7 @@ var scaffolds = map[string]scaffold{
 			{name: "screen.go", template: animFile},
 			{name: "runlog.go", template: "templates/shared/runlog.go.tmpl"},
 		},
-		run: "go run %s",
+		module: true,
 	},
 	"bash": {
 		files: []scaffoldFile{{name: "main.sh", template: "templates/bash/main.sh.tmpl", exec: true}},
@@ -56,6 +57,12 @@ var scaffolds = map[string]scaffold{
 		run:   "node %s/run.js",
 	},
 }
+
+const (
+	scaffoldGo  = "1.24"
+	todoSummary = "TODO one line — the problem this tool answers"
+	todoWhy     = "TODO what it does and why this way and not another."
+)
 
 var (
 	toolID  = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
@@ -122,8 +129,8 @@ func cmdNew(cfg Config, args []string) error {
 	if err != nil {
 		return err
 	}
-	rel, relErr := filepath.Rel(cfg.Root, target)
-	if relErr != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+	rel, inside := within(cfg.Root, target)
+	if !inside {
 		return fmt.Errorf("directory %s is outside the workspace %s", target, cfg.Root)
 	}
 
@@ -151,15 +158,25 @@ func cmdNew(cfg Config, args []string) error {
 	if err := os.MkdirAll(cfg.Registry, 0o755); err != nil {
 		return err
 	}
-	repo := resolveRepo(target, map[string]repoInfo{})
-	runRel := "."
-	if repo.root != "" {
-		if fromRepo, repoErr := filepath.Rel(repo.root, target); repoErr == nil {
-			runRel = "./" + filepath.ToSlash(fromRepo)
+
+	manifest := scaffoldManifest(id, filepath.ToSlash(rel), cfg.Envs)
+	base := workBase(target)
+	if plan.module {
+		module := goModuleDir(cfg, target)
+		if module == "" {
+			path := filepath.Join(target, "go.mod")
+			if err := os.WriteFile(path, []byte("module "+id+"\n\ngo "+scaffoldGo+"\n"), 0o644); err != nil {
+				return err
+			}
+			created = append(created, path)
+			module = target
 		}
+		manifest.Workdir, manifest.Run = goRun(base, module, target)
+	} else {
+		manifest.Run = fmt.Sprintf(plan.run, runPath(base, target))
 	}
 
-	if err := os.WriteFile(manifestPath, []byte(renderManifest(id, plan, filepath.ToSlash(rel), runRel, cfg.Envs)), 0o644); err != nil {
+	if err := os.WriteFile(manifestPath, []byte(manifestYAML(manifest)), 0o644); err != nil {
 		return err
 	}
 	created = append(created, manifestPath)
@@ -258,22 +275,57 @@ func idTerms(id string) []string {
 	return terms
 }
 
-func renderManifest(id string, plan scaffold, rel, runRel string, envs []string) string {
+func scaffoldManifest(id, rel string, envs []string) Manifest {
 	target := "local"
 	if len(envs) > 0 {
 		target = envs[0]
 	}
+	return Manifest{
+		ID:      id,
+		Kind:    "tool",
+		Path:    rel,
+		Summary: todoSummary,
+		Safety:  "read-only",
+		Targets: []string{target},
+		Guard:   "self",
+		Why:     todoWhy,
+		Status:  "active",
+	}
+}
 
-	return fmt.Sprintf(`id: %s
-path: %s
-summary: TODO one line — the problem this tool answers
-run: %s
-safety: read-only
-targets: [%s]
-guard: self
-why: |
-  TODO what it does and why this way and not another.
-tags: []
-status: active
-`, id, rel, fmt.Sprintf(plan.run, runRel), target)
+func workBase(target string) string {
+	if repo := resolveRepo(target, map[string]repoInfo{}); repo.root != "" {
+		return repo.root
+	}
+	return target
+}
+
+func runPath(base, target string) string {
+	if rel := relTo(base, target); rel != "." {
+		return "./" + filepath.ToSlash(rel)
+	}
+	return "."
+}
+
+func goModuleDir(cfg Config, dir string) string {
+	stop := resolveRepo(dir, map[string]repoInfo{}).root
+	if stop == "" {
+		stop = cfg.Root
+	}
+	for {
+		if fileExists(filepath.Join(dir, "go.mod")) {
+			return dir
+		}
+		if dir == stop || dir == filepath.Dir(dir) {
+			return ""
+		}
+		dir = filepath.Dir(dir)
+	}
+}
+
+func goRun(base, module, pkg string) (workdir, run string) {
+	if module != base {
+		workdir = filepath.ToSlash(relTo(base, module))
+	}
+	return workdir, "go run " + shellQuote(runPath(module, pkg))
 }

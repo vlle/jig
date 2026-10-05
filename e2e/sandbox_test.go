@@ -254,12 +254,21 @@ type doctorFinding struct {
 func (s *sandbox) doctor() []doctorFinding {
 	s.t.Helper()
 	r := s.jig("doctor", "--json")
-	r.ok(s.t)
 	var report struct {
 		Findings []doctorFinding `json:"findings"`
 	}
 	if err := json.Unmarshal([]byte(r.stdout), &report); err != nil {
-		s.t.Fatalf("doctor --json is not JSON: %v", err)
+		s.t.Fatalf("doctor --json is not JSON: %v\n%s", err, r.stderr)
+	}
+
+	want := 0
+	for _, item := range report.Findings {
+		if item.Level == "problem" {
+			want = 1
+		}
+	}
+	if r.code != want {
+		s.t.Fatalf("doctor exited %d, want %d for %+v", r.code, want, report.Findings)
 	}
 	return report.Findings
 }

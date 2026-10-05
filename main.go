@@ -19,12 +19,17 @@ const usage = `jig — find, run and scaffold the scripts in your workspace
   jig run    [--yes] <id> [-- args...]        run from the tool's workdir
   jig new    <id> [--kind KIND] [--dir DIR] [--force]
                                               scaffold: go, go-parallel, bash, node
-  jig doctor [--json]                         orphans, broken manifests, stale index
+  jig add    <path>... [--id ID] [--summary S] [--why W] [--safety S]
+             [--targets a,b] [--tags a,b] [--run CMD]
+                                              register scripts that already exist
+  jig doctor [--json]                         orphans, broken manifests, stale index;
+                                              exits 1 when it finds a problem
   jig index  [--out PATH]                     regenerate TOOLS.md
   jig init   [DIR]                            create jig.yml and an empty registry
   jig demo   [--only NAME] [--speed N]        the animation kit scaffolds ship with
   jig agent  rules|skill                      text to install jig into a coding agent
   jig hook                                    Claude Code PreToolUse hook (stdin JSON)
+  jig version                                 version, commit, Go and platform
 
 Search before you write: jig ls <words>. Reuse or extend; scaffold only when nothing fits.
 Workspace: the nearest jig.yml above the current directory, or $JIG_ROOT.
@@ -59,6 +64,8 @@ func dispatch(argv []string, record *runRecord) int {
 	record.Argv = redactArgs(args)
 
 	switch command {
+	case "version", "--version":
+		return exitCode(cmdVersion())
 	case "init":
 		return exitCode(cmdInit(args))
 	case "demo":
@@ -93,6 +100,8 @@ func dispatch(argv []string, record *runRecord) int {
 		err = cmdDoctor(cfg, args)
 	case "new":
 		err = cmdNew(cfg, args)
+	case "add":
+		err = cmdAdd(cfg, args)
 	case "index":
 		err = cmdIndex(cfg, args)
 	default:
@@ -118,7 +127,7 @@ type exitError struct {
 }
 
 func (e exitError) Error() string {
-	return fmt.Sprintf("tool exited with code %d", e.code)
+	return fmt.Sprintf("exit code %d", e.code)
 }
 
 func exitCode(err error) int {
