@@ -13,7 +13,7 @@ import (
 const usage = `jig — find, run and scaffold the scripts in your workspace
 
   jig                                         home screen and tool browser
-  jig ls     [QUERY] [--search Q] [--tag T] [--kind K] [--all] [--json]
+  jig ls     [QUERY] [--search Q] [--tag T] [--kind K] [--all] [--json|--ids]
   jig show   <id> [--json]                    manifest, flags, safety, where it runs
   jig src    <id>                             source of the tool
   jig run    [--yes] <id> [-- args...]        run from the tool's workdir
@@ -29,6 +29,7 @@ const usage = `jig — find, run and scaffold the scripts in your workspace
   jig demo   [--only NAME] [--speed N]        the animation kit scaffolds ship with
   jig agent  rules|skill                      text to install jig into a coding agent
   jig hook                                    Claude Code PreToolUse hook (stdin JSON)
+  jig completion bash|zsh|fish                shell completion, tool ids included
   jig version                                 version, commit, Go and platform
 
 Search before you write: jig ls <words>. Reuse or extend; scaffold only when nothing fits.
@@ -72,6 +73,8 @@ func dispatch(argv []string, record *runRecord) int {
 		return exitCode(cmdDemo(args))
 	case "agent":
 		return exitCode(cmdAgent(args))
+	case "completion":
+		return exitCode(cmdCompletion(args))
 	case "hook":
 		return exitCode(cmdHook(os.Stdin, os.Stdout))
 	}

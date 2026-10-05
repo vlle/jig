@@ -17,6 +17,9 @@ and `doctor` and the manifest schema are the public API.
   it in one go. Nothing is written when any path fails. Without `--safety` the manifest says
   `writes`: an unknown script is not assumed harmless.
 - `jig version` and `jig --version`, which work outside a workspace.
+- `jig completion bash|zsh|fish` completes commands, tool ids for `run`, `show` and `src`,
+  `--kind` and `--safety` values. The lookup behind TAB does not write to the run log.
+- `jig ls --ids` prints only the ids, one per line.
 - `jig doctor` reports `unfinished manifest` when `summary` or `why` still holds the TODO
   that `jig new` and `jig add` leave behind.
 - Prebuilt binaries for Linux and macOS (amd64 and arm64) with checksums on every release.

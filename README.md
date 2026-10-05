@@ -94,6 +94,14 @@ jig doctor           # exits 0 when the registry is in order
 `jig` finds its workspace the way git finds a repository: the nearest `jig.yml` above the
 current directory. `JIG_ROOT` overrides it.
 
+Shell completion, tool ids for `run`, `show` and `src` included:
+
+```bash
+echo 'source <(jig completion bash)' >> ~/.bashrc
+echo 'source <(jig completion zsh)' >> ~/.zshrc
+jig completion fish > ~/.config/fish/completions/jig.fish
+```
+
 jig runs on macOS and Linux. `jig run` starts tools through `bash`, so on Windows use WSL.
 
 ## Commands
@@ -111,6 +119,7 @@ jig doctor                 # problems in the registry; exit status 1 when there 
 jig index                  # regenerate TOOLS.md
 jig demo                   # the animation kit the scaffolds ship with
 jig agent rules|skill      # text for your coding agent
+jig completion fish        # bash, zsh or fish
 jig version
 ```
 

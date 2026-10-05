@@ -608,3 +608,45 @@ func goBuild(t *testing.T, dir, pkg string) {
 		t.Fatalf("go build %s in %s: %v\n%s", pkg, dir, err, out)
 	}
 }
+
+func TestCompletion(t *testing.T) {
+	t.Parallel()
+	s := newSandbox(t)
+
+	r := s.jig("ls", "--ids")
+	r.ok(t)
+	if got := strings.Join(strings.Fields(r.stdout), " "); got != "probe-dev probe-ro probe-writes" {
+		t.Fatalf("ls --ids: %q", got)
+	}
+	if got := len(strings.Fields(s.jig("ls", "--all", "--ids").stdout)); got != 5 {
+		t.Fatalf("ls --all --ids: %d ids", got)
+	}
+
+	for _, shell := range []string{"bash", "zsh", "fish"} {
+		r := s.jig("completion", shell)
+		r.ok(t)
+		contains(t, shell, r.stdout, "jig ls --all --ids")
+	}
+	s.jig("completion", "tcsh").failed(t)
+
+	script := s.jig("completion", "bash").stdout + "\nCOMP_WORDS=(jig run probe-r); COMP_CWORD=2; _jig; echo \"${COMPREPLY[@]}\"\n"
+	complete := exec.Command("bash", "-c", script)
+	complete.Dir = s.root
+	complete.Env = append(s.environ(), "PATH="+filepath.Dir(jigBin)+string(os.PathListSeparator)+os.Getenv("PATH"))
+	out, err := complete.CombinedOutput()
+	if err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	if strings.TrimSpace(string(out)) != "probe-ro" {
+		t.Fatalf("bash completion of `jig run probe-r`: %q", out)
+	}
+	lists := 0
+	for _, record := range s.runlog() {
+		if record["cmd"] == "ls" {
+			lists++
+		}
+	}
+	if lists != 2 {
+		t.Fatalf("the lookup behind TAB must not write to the run log, got %d ls records", lists)
+	}
+}

@@ -13,6 +13,7 @@ import (
 
 func cmdList(cfg Config, args []string) error {
 	asJSON, args := hasFlag(args, "--json")
+	onlyIDs, args := hasFlag(args, "--ids")
 	showAll, args := hasFlag(args, "--all")
 	kind, args := flagValue(args, "--kind")
 	tag, args := flagValue(args, "--tag")
@@ -41,6 +42,12 @@ func cmdList(cfg Config, args []string) error {
 			tools = []Tool{}
 		}
 		return emitJSON(tools)
+	}
+	if onlyIDs {
+		for _, tool := range tools {
+			fmt.Println(tool.ID)
+		}
+		return nil
 	}
 
 	if len(tools) == 0 {
