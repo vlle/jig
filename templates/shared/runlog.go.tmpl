@@ -1,0 +1,107 @@
+package main
+
+import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+)
+
+func appendRunlog(started time.Time, code int) {
+	if os.Getenv("JIG_RUN_ID") != "" {
+		return
+	}
+
+	path := runlogPath()
+	if path == "" || path == "-" {
+		return
+	}
+
+	cwd, _ := os.Getwd()
+	line, err := json.Marshal(map[string]any{
+		"ts":          started.Format(time.RFC3339),
+		"source":      "tool",
+		"tool":        "{{.ID}}",
+		"argv":        redactArgs(os.Args[1:]),
+		"cwd":         cwd,
+		"exit_code":   code,
+		"duration_ms": time.Since(started).Milliseconds(),
+		"pid":         os.Getpid(),
+	})
+	if err != nil {
+		return
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return
+	}
+
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		return
+	}
+	defer func() { _ = file.Close() }()
+
+	_, _ = file.Write(append(line, '\n'))
+}
+
+func runlogPath() string {
+	if custom := os.Getenv("JIG_LOG"); custom != "" {
+		return custom
+	}
+
+	base := os.Getenv("XDG_STATE_HOME")
+	if base == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return ""
+		}
+		base = filepath.Join(home, ".local", "state")
+	}
+	return filepath.Join(base, "jig", "runs.jsonl")
+}
+
+func redactArgs(args []string) []string {
+	if len(args) == 0 {
+		return nil
+	}
+
+	redacted := make([]string, 0, len(args))
+	hideNext := false
+
+	for _, arg := range args {
+		if hideNext {
+			redacted = append(redacted, "***")
+			hideNext = false
+			continue
+		}
+
+		name, _, inline := strings.Cut(arg, "=")
+		if !isSecretFlag(name) {
+			redacted = append(redacted, arg)
+			continue
+		}
+		if inline {
+			redacted = append(redacted, name+"=***")
+			continue
+		}
+		redacted = append(redacted, arg)
+		hideNext = true
+	}
+
+	return redacted
+}
+
+func isSecretFlag(name string) bool {
+	if !strings.HasPrefix(name, "-") {
+		return false
+	}
+
+	lowered := strings.ToLower(name)
+	for _, part := range []string{"token", "pass", "secret", "key", "cookie", "auth", "cred"} {
+		if strings.Contains(lowered, part) {
+			return true
+		}
+	}
+	return false
+}

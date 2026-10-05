@@ -1,0 +1,175 @@
+#!/usr/bin/env node
+
+const animated =
+  !process.env.NO_COLOR &&
+  process.env.TERM !== 'dumb' &&
+  Boolean(process.env.TERM) &&
+  process.stderr.isTTY === true;
+
+const paint = (code) => (s) => (animated ? `\x1b[${code}m${s}\x1b[0m` : String(s));
+const dim = paint(2);
+const red = paint(31);
+const green = paint(32);
+const cyan = paint(36);
+
+const frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+const started = Date.now();
+
+const log = (message) =>
+  process.stderr.write(`${dim(`[${new Date().toTimeString().slice(0, 8)}]`)} ${message}\n`);
+
+if (animated) {
+  process.on('SIGINT', () => {
+    process.stderr.write('\x1b[?25h\n');
+    process.exit(130);
+  });
+}
+
+async function step(title, fn) {
+  const begun = Date.now();
+  let detail = '';
+  let tick = 0;
+
+  const line = (mark) => {
+    const seconds = ((Date.now() - begun) / 1000).toFixed(1);
+    return `  ${mark} ${title}${detail ? `   ${dim(detail)}` : ''}   ${dim(`${seconds}s`)}`;
+  };
+
+  const timer = animated
+    ? setInterval(() => process.stderr.write(`\r${line(cyan(frames[tick++ % frames.length]))}\x1b[K`), 80)
+    : null;
+  if (animated) process.stderr.write('\x1b[?25l');
+
+  const finish = (mark) => {
+    if (timer) clearInterval(timer);
+    process.stderr.write(animated ? `\r${line(mark)}\x1b[K\n\x1b[?25h` : `${line(mark)}\n`);
+  };
+
+  try {
+    const result = await fn((value) => {
+      detail = value;
+    });
+    finish(green('✓'));
+    return result;
+  } catch (err) {
+    detail = red(err.message);
+    finish(red('✗'));
+    throw err;
+  }
+}
+
+const secretFlag = (name) =>
+  name.startsWith('-') && /token|pass|secret|key|cookie|auth|cred/i.test(name);
+
+function redactArgs(args) {
+  const redacted = [];
+  let hideNext = false;
+
+  for (const arg of args) {
+    if (hideNext) {
+      redacted.push('***');
+      hideNext = false;
+      continue;
+    }
+    const [name, ...rest] = arg.split('=');
+    if (!secretFlag(name)) {
+      redacted.push(arg);
+    } else if (rest.length > 0) {
+      redacted.push(`${name}=***`);
+    } else {
+      redacted.push(arg);
+      hideNext = true;
+    }
+  }
+  return redacted;
+}
+
+function appendRunlog(code) {
+  if (process.env.JIG_RUN_ID) return;
+
+  try {
+    const fs = require('node:fs');
+    const os = require('node:os');
+    const nodePath = require('node:path');
+
+    const target =
+      process.env.JIG_LOG ||
+      nodePath.join(process.env.XDG_STATE_HOME || nodePath.join(os.homedir(), '.local', 'state'), 'jig', 'runs.jsonl');
+    if (target === '-') return;
+
+    fs.mkdirSync(nodePath.dirname(target), { recursive: true });
+    fs.appendFileSync(
+      target,
+      `${JSON.stringify({
+        ts: new Date(started).toISOString(),
+        source: 'tool',
+        tool: '{{.ID}}',
+        argv: redactArgs(process.argv.slice(2)),
+        cwd: process.cwd(),
+        exit_code: code,
+        duration_ms: Date.now() - started,
+        pid: process.pid,
+      })}\n`,
+    );
+  } catch {}
+}
+
+function parseArgs(argv) {
+  const options = { {{if .Envs}}env: '{{.DefaultEnv}}', {{end}}timeoutMs: 30_000, dryRun: true };
+
+  for (let i = 0; i < argv.length; i++) {
+    const [flag, inline] = argv[i].split('=');
+    const value = () => inline ?? argv[++i];
+    switch (flag) {
+{{- if .Envs}}
+      case '--env': options.env = value(); break;
+{{- end}}
+      case '--timeout': options.timeoutMs = Number(value()) * 1000; break;
+      case '--apply': options.dryRun = false; break;
+      default: throw new Error(`unknown flag ${flag}`);
+    }
+  }
+{{if .Envs}}
+  if (![{{.EnvJS}}].includes(options.env)) {
+    throw new Error(`unknown --env=${options.env}, expected {{.EnvList}}`);
+  }
+{{- end}}
+  if (!Number.isFinite(options.timeoutMs) || options.timeoutMs <= 0) {
+    throw new Error('--timeout must be a positive number of seconds');
+  }
+  return options;
+}
+
+async function collect(signal, report) {
+  report('reading');
+  if (signal.aborted) throw new Error('timed out');
+  throw new Error('{{.ID}}: the logic is not written yet');
+}
+
+async function main() {
+  const options = parseArgs(process.argv.slice(2));
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), options.timeoutMs);
+
+  try {
+    log(`start{{if .Envs}}, env=${options.env}{{end}}`);
+    const items = await step('collecting', (report) => collect(controller.signal, report));
+    for (const item of items) process.stdout.write(`${item}\n`);
+
+    if (options.dryRun) {
+      log('dry-run: nothing changed, --apply applies');
+      return;
+    }
+    throw new Error('{{.ID}}: the apply step is not written yet');
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+main()
+  .then(() => appendRunlog(0))
+  .catch((err) => {
+    process.stderr.write(`${red('error:')} ${err.message}\n`);
+    appendRunlog(1);
+    process.exit(1);
+  });

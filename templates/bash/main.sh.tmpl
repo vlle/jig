@@ -1,0 +1,95 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+JIG_ARGV=("$@")
+{{if .Envs}}
+ENV="${ENV:-{{.DefaultEnv}}}"
+{{- end}}
+DRY_RUN="${DRY_RUN:-1}"
+REQUIRED_BINS=()
+{{if .Envs}}
+case "$ENV" in
+  {{.EnvPipe}}) ;;
+  *) echo "unknown ENV='$ENV', expected {{.EnvList}}" >&2; exit 2 ;;
+esac
+{{end}}
+if [[ -t 2 && -z "${NO_COLOR:-}" && "${TERM:-dumb}" != "dumb" ]]; then
+  ANIMATE=1; C_ERR=$'\033[31m'; C_OK=$'\033[32m'; C_ACC=$'\033[36m'; C_DIM=$'\033[2m'; C_RST=$'\033[0m'
+else
+  ANIMATE=0; C_ERR=""; C_OK=""; C_ACC=""; C_DIM=""; C_RST=""
+fi
+
+log()  { printf '%s[%s]%s %s\n' "$C_DIM" "$(date +%H:%M:%S)" "$C_RST" "$*" >&2; }
+fail() { printf '%serror:%s %s\n' "$C_ERR" "$C_RST" "$*" >&2; exit 1; }
+
+step() {
+  local title=$1; shift
+  local started=$SECONDS code=0 tick=0 out err pid
+  local frames=(⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏)
+  out=$(mktemp); err=$(mktemp)
+
+  "$@" >"$out" 2>"$err" &
+  pid=$!
+
+  if [[ $ANIMATE == 1 ]]; then
+    printf '\033[?25l' >&2
+    while kill -0 "$pid" 2>/dev/null; do
+      printf '\r  %s%s%s %s   %s%ds%s\033[K' "$C_ACC" "${frames[tick++ % 10]}" "$C_RST" "$title" "$C_DIM" "$((SECONDS - started))" "$C_RST" >&2
+      sleep 0.08
+    done
+    printf '\r\033[K\033[?25h' >&2
+  fi
+
+  wait "$pid" || code=$?
+  if [[ $code == 0 ]]; then
+    printf '  %s✓%s %s   %s%ds%s\n' "$C_OK" "$C_RST" "$title" "$C_DIM" "$((SECONDS - started))" "$C_RST" >&2
+    cat "$out"
+  else
+    printf '  %s✗%s %s   %sexit %d%s\n' "$C_ERR" "$C_RST" "$title" "$C_ERR" "$code" "$C_RST" >&2
+    tail -n 20 "$err" >&2
+  fi
+  rm -f "$out" "$err"
+  return "$code"
+}
+
+jig_runlog() {
+  local code=$?
+  [[ $ANIMATE == 1 ]] && printf '\033[?25h' >&2
+  [[ -n "${JIG_RUN_ID:-}" ]] && return 0
+
+  local path="${JIG_LOG:-${XDG_STATE_HOME:-$HOME/.local/state}/jig/runs.jsonl}"
+  [[ "$path" == "-" ]] && return 0
+  mkdir -p "$(dirname "$path")" 2>/dev/null || return 0
+
+  local argv="" item hide=0
+  for item in ${JIG_ARGV[@]+"${JIG_ARGV[@]}"}; do
+    if [[ $hide == 1 ]]; then
+      item='***'; hide=0
+    else
+      case "$item" in
+        -*token*=*|-*pass*=*|-*secret*=*|-*key*=*|-*cookie*=*|-*auth*=*|-*cred*=*) item="${item%%=*}=***" ;;
+        -*token*|-*pass*|-*secret*|-*key*|-*cookie*|-*auth*|-*cred*) hide=1 ;;
+      esac
+    fi
+    item="${item//\\/\\\\}"; item="${item//\"/\\\"}"
+    argv+="${argv:+,}\"$item\""
+  done
+
+  printf '{"ts":"%s","source":"tool","tool":"%s","argv":[%s],"cwd":"%s","exit_code":%d,"duration_ms":%d,"pid":%d}\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "{{.ID}}" "$argv" "$PWD" "$code" "$(( SECONDS * 1000 ))" "$$" >> "$path" 2>/dev/null || true
+}
+trap jig_runlog EXIT
+
+for bin in ${REQUIRED_BINS[@]+"${REQUIRED_BINS[@]}"}; do
+  command -v "$bin" >/dev/null 2>&1 || fail "$bin not found in PATH"
+done
+
+collect() {
+  echo "{{.ID}}: the logic is not written yet" >&2
+  return 1
+}
+
+log "start{{if .Envs}}, env=$ENV{{end}}"
+[[ "$DRY_RUN" == "1" ]] && log "dry-run: nothing changes, DRY_RUN=0 applies"
+
+step "collecting" collect

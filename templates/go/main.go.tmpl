@@ -1,0 +1,130 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"flag"
+	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+)
+
+type options struct {
+{{- if .Envs}}
+	env     string
+{{- end}}
+	timeout time.Duration
+	dryRun  bool
+	anim    string
+	logPath string
+}
+
+var errBadArgs = errors.New("bad arguments")
+
+func main() {
+	started := time.Now()
+	code := exitStatus(run())
+
+	appendRunlog(started, code)
+	os.Exit(code)
+}
+
+func exitStatus(err error) int {
+	if err == nil {
+		return 0
+	}
+	if errors.Is(err, flag.ErrHelp) {
+		return 2
+	}
+
+	fmt.Fprintf(os.Stderr, "error: %v\n", err)
+	if errors.Is(err, errBadArgs) {
+		return 2
+	}
+	return 1
+}
+
+func run() error {
+	opts, err := parseFlags()
+	if err != nil {
+		return err
+	}
+
+	s, err := NewScreen(Options{Mode: opts.anim, LogPath: opts.logPath, Tool: "{{.ID}}"})
+	if err != nil {
+		return fmt.Errorf("%w: %v", errBadArgs, err)
+	}
+	defer s.Close()
+
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	ctx, cancel := context.WithTimeout(ctx, opts.timeout)
+	defer cancel()
+
+	s.Note("  %s{{.ID}}%s{{if .Envs}}  env=%s{{end}}  dry-run=%v", s.C.Bold, s.C.Reset{{if .Envs}}, opts.env{{end}}, opts.dryRun)
+
+	var items []string
+	err = s.Step("collecting", func(report func(string)) error {
+		var collectErr error
+		items, collectErr = collect(ctx, report)
+		return collectErr
+	})
+	if err != nil {
+		return err
+	}
+
+	for _, item := range items {
+		fmt.Println(item)
+	}
+
+	if opts.dryRun {
+		s.Note("  %sdry-run: nothing changed, -dry-run=false applies%s", s.C.Dim, s.C.Reset)
+		return nil
+	}
+	return errors.New("{{.ID}}: the apply step is not written yet")
+}
+
+func collect(ctx context.Context, report func(detail string)) ([]string, error) {
+	report("reading")
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return nil, errors.New("{{.ID}}: the logic is not written yet")
+}
+
+func parseFlags() (options, error) {
+	var opts options
+{{if .Envs}}
+	flag.StringVar(&opts.env, "env", "{{.DefaultEnv}}", "environment: {{.EnvList}}")
+{{- end}}
+	flag.DurationVar(&opts.timeout, "timeout", 30*time.Second, "overall timeout")
+	flag.BoolVar(&opts.dryRun, "dry-run", true, "show what would happen without changing anything")
+	flag.StringVar(&opts.anim, "anim", "auto", "animation: auto (by TTY), always or never")
+	flag.StringVar(&opts.logPath, "log", "auto", "audit log path, \"auto\" for the state dir, \"-\" disables it")
+
+	flag.CommandLine.Init(os.Args[0], flag.ContinueOnError)
+	if err := flag.CommandLine.Parse(os.Args[1:]); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return opts, err
+		}
+		return opts, fmt.Errorf("%w: %v", errBadArgs, err)
+	}
+	if flag.NArg() > 0 {
+		return opts, fmt.Errorf("%w: unexpected arguments %q", errBadArgs, flag.Args())
+	}
+{{if .Envs}}
+	switch opts.env {
+	case {{.EnvCases}}:
+	default:
+		return opts, fmt.Errorf("%w: unknown -env=%q, expected {{.EnvList}}", errBadArgs, opts.env)
+	}
+{{- end}}
+	if opts.timeout <= 0 {
+		return opts, fmt.Errorf("%w: -timeout must be positive, got %s", errBadArgs, opts.timeout)
+	}
+
+	return opts, nil
+}
