@@ -12,7 +12,7 @@ const bashCompletion = `_jig() {
     return
   fi
   case ${COMP_WORDS[1]} in
-    show|src|run) COMPREPLY=($(compgen -W "$(JIG_LOG=- jig ls --all --ids 2>/dev/null)" -- "$cur")) ;;
+    show|src|run) COMPREPLY=($(compgen -W "$(JIG_LOG=- jig ls --all --ids --registered 2>/dev/null)" -- "$cur")) ;;
     new) [[ $prev == --kind ]] && COMPREPLY=($(compgen -W "go go-parallel bash node" -- "$cur")) ;;
     add) [[ $prev == --safety ]] && COMPREPLY=($(compgen -W "read-only writes destructive" -- "$cur")) ;;
     agent) COMPREPLY=($(compgen -W "rules skill" -- "$cur")) ;;
@@ -27,7 +27,7 @@ const zshCompletion = `autoload -U +X bashcompinit && bashcompinit
 
 const fishCompletion = `complete -c jig -f
 complete -c jig -n __fish_use_subcommand -a "ls show src run new add doctor index init demo agent hook version completion help"
-complete -c jig -n "__fish_seen_subcommand_from show src run" -a "(env JIG_LOG=- jig ls --all --ids 2>/dev/null)"
+complete -c jig -n "__fish_seen_subcommand_from show src run" -a "(env JIG_LOG=- jig ls --all --ids --registered 2>/dev/null)"
 complete -c jig -n "__fish_seen_subcommand_from new" -l kind -xa "go go-parallel bash node"
 complete -c jig -n "__fish_seen_subcommand_from new" -l dir -r -F
 complete -c jig -n "__fish_seen_subcommand_from add" -F

@@ -110,21 +110,13 @@ func diagnose(cfg Config, progress func(files int)) doctorReport {
 		add(finding{Kind: "broken manifest", Detail: message})
 	}
 
-	covered := map[string]bool{}
-	coveredDirs := map[string]bool{}
 	var unfinished []string
 	for _, tool := range result.Tools {
-		stat, err := os.Stat(tool.TargetAbs)
-		if err != nil {
+		if _, err := os.Stat(tool.TargetAbs); err != nil {
 			add(finding{Kind: "path does not exist", Detail: tool.ID + ": " + tool.Path, Paths: []string{tool.ManifestPath}})
 			continue
 		}
-		if stat.IsDir() {
-			coveredDirs[tool.TargetAbs] = true
-		}
-		if path := sourcePath(tool); path != "" {
-			covered[path] = true
-		} else {
+		if sourcePath(tool) == "" {
 			add(finding{Kind: "manifest without source", Detail: tool.ID, Paths: []string{tool.ManifestPath}})
 		}
 		if target := missingRunTarget(tool); target != "" {
@@ -144,15 +136,14 @@ func diagnose(cfg Config, progress func(files int)) doctorReport {
 	}
 
 	repos := map[string]repoInfo{}
-	scripts, empties, files := walkScripts(cfg, progress)
-	report.Files = files
-	scripts = dropIgnored(cfg.Root, scripts)
-	scripts = dedupeByCheckout(scripts, repos)
+	ws := walkWorkspace(cfg, progress)
+	report.Files = ws.files
+	scripts := dedupeByCheckout(dropIgnored(cfg.Root, ws.scripts), repos)
 
-	if len(empties) > 0 {
-		relative := make([]string, 0, len(empties))
-		quoted := make([]string, 0, len(empties))
-		for _, dir := range empties {
+	if len(ws.empties) > 0 {
+		relative := make([]string, 0, len(ws.empties))
+		quoted := make([]string, 0, len(ws.empties))
+		for _, dir := range ws.empties {
 			relative = append(relative, relTo(cfg.Root, dir))
 			quoted = append(quoted, shellQuote(relTo(cfg.Root, dir)))
 		}
@@ -160,17 +151,14 @@ func diagnose(cfg Config, progress func(files int)) doctorReport {
 		sort.Strings(quoted)
 		add(finding{
 			Kind:   "empty tool directories",
-			Detail: fmt.Sprintf("%d", len(empties)),
+			Detail: fmt.Sprintf("%d", len(ws.empties)),
 			Paths:  relative,
 			Fix:    "cd " + shellQuote(cfg.Root) + " && rmdir " + strings.Join(quoted, " "),
 		})
 	}
 
 	var orphans []string
-	for _, path := range scripts {
-		if covered[path] || coveredDirs[filepath.Dir(path)] {
-			continue
-		}
+	for _, path := range uncovered(result.Tools, scripts) {
 		orphans = append(orphans, relTo(cfg.Root, path))
 	}
 	if len(orphans) > 0 {
@@ -254,37 +242,6 @@ func writeDoctor(w io.Writer, report doctorReport, p palette) {
 	}
 }
 
-func walkScripts(cfg Config, progress func(int)) (scripts, empties []string, files int) {
-	_ = filepath.WalkDir(cfg.Root, func(path string, entry os.DirEntry, err error) error {
-		if err != nil {
-			return nil
-		}
-
-		if entry.IsDir() {
-			if cfg.skipped(path) || bundledDirs[entry.Name()] || path == cfg.Registry {
-				return filepath.SkipDir
-			}
-			if path != cfg.Root && cfg.inToolDir(path) && isEmptyDir(path) {
-				empties = append(empties, path)
-			}
-			return nil
-		}
-
-		files++
-		if progress != nil && files%250 == 0 {
-			progress(files)
-		}
-		if isScriptCandidate(cfg, path) {
-			scripts = append(scripts, path)
-		}
-		return nil
-	})
-	if progress != nil {
-		progress(files)
-	}
-	return scripts, empties, files
-}
-
 func isScriptCandidate(cfg Config, path string) bool {
 	name := filepath.Base(path)
 	if strings.Contains(name, ".min.") || strings.HasSuffix(name, "_test.go") {
@@ -295,11 +252,6 @@ func isScriptCandidate(cfg Config, path string) bool {
 		return true
 	}
 	return toolDirExts[ext] && cfg.inToolDir(filepath.Dir(path))
-}
-
-func isEmptyDir(path string) bool {
-	entries, err := os.ReadDir(path)
-	return err == nil && len(entries) == 0
 }
 
 func identicalGroups(paths []string) [][]string {

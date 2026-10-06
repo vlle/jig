@@ -52,7 +52,9 @@ func scan(cfg Config) scanResult {
 		}
 		seen[manifest.ID] = path
 
-		result.Tools = append(result.Tools, resolveTool(cfg, manifest, path, repos))
+		tool := resolveTool(cfg, manifest, path, repos)
+		tool.Registered, tool.Origin = true, originRegistry
+		result.Tools = append(result.Tools, tool)
 	}
 
 	sort.Slice(result.Tools, func(i, j int) bool { return result.Tools[i].ID < result.Tools[j].ID })

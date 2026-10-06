@@ -14,6 +14,8 @@ const usage = `jig — find, run and scaffold the scripts in your workspace
 
   jig                                         home screen and tool browser
   jig ls     [QUERY] [--search Q] [--tag T] [--kind K] [--all] [--json|--ids]
+             [--registered|--found]           registered tools, then scripts and make/just/
+                                              npm/task targets found without a manifest
   jig show   <id> [--json]                    manifest, flags, safety, where it runs
   jig src    <id>                             source of the tool
   jig run    [--yes] <id> [-- args...]        run from the tool's workdir

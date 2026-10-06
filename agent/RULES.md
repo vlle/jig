@@ -8,9 +8,13 @@ the next session, so it gets rewritten from scratch. jig exists to stop that.
 
 1. `jig ls <words>` with the domain word (`stock`, `orders`, `billing`) and again with the
    action word (`check`, `diag`, `export`, `stats`). Use `jig ls --tag <tag>` when you know one.
+   The registry comes first; below it `jig ls` lists what has no manifest yet: scripts and
+   make, just, npm and task targets (`"registered": false` in `--json`).
 2. Tell the user what you found before doing anything else.
 3. Something fits → `jig show <id>` and `jig src <id>`, then run it or extend it.
    Extending an existing tool is the default; a new one needs a reason you can state.
+   A found script that fits is reused the same way; register it with `jig add <path>` when
+   it will run again.
 4. Something is close → show it and ask whether to extend it or create a new tool.
 5. Nothing fits → scaffold, never start from an empty file:
    `jig new <id> --kind go|go-parallel|bash|node --dir <dir>`.

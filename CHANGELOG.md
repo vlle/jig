@@ -6,6 +6,27 @@ and `doctor` and the manifest schema are the public API.
 
 ## [Unreleased]
 
+### Added
+
+- `jig ls` finds what has no manifest yet and lists it after the registry: scripts that
+  `jig doctor` reports, and the targets of `Makefile`, `justfile`, `package.json` scripts and
+  `Taskfile.yml`. The summary comes from the header comment, a Python docstring or
+  `argparse` description, the usage line, `## description`, `[doc(...)]` or `desc`; scripts
+  are read, never run. Ids are workspace paths (`scripts/check-stock.sh`) or
+  `<file>:<target>` (`Makefile:build`). `show`, `src`, `run` and the home screen accept them.
+- `jig ls --found` lists only those, `jig ls --registered` only the registry.
+- `ls --json` and `show --json` carry `registered` and `origin` (`registry`, `script`,
+  `make`, `just`, `npm`, `task`).
+- `jig init` reports what it found and that it is searchable right away.
+- `jig add` without `--summary` takes the summary from the script's header.
+
+### Changed
+
+- `jig ls --json` includes found entries with `"registered": false`; pass `--registered`
+  for the previous list.
+- The workspace walk behind `doctor` and `ls` reads directories in parallel.
+- Shell completion offers registered ids only.
+
 ## [1.1.0] - 2026-10-06
 
 ### Added

@@ -11,10 +11,14 @@ import (
 	"time"
 )
 
+const foundListLimit = 40
+
 func cmdList(cfg Config, args []string) error {
 	asJSON, args := hasFlag(args, "--json")
 	onlyIDs, args := hasFlag(args, "--ids")
 	showAll, args := hasFlag(args, "--all")
+	onlyRegistered, args := hasFlag(args, "--registered")
+	onlyFound, args := hasFlag(args, "--found")
 	kind, args := flagValue(args, "--kind")
 	tag, args := flagValue(args, "--tag")
 	query, args := flagValue(args, "--search")
@@ -27,6 +31,7 @@ func cmdList(cfg Config, args []string) error {
 	var tools []Tool
 	for _, tool := range result.Tools {
 		switch {
+		case onlyFound:
 		case !showAll && tool.Status == "deprecated":
 		case kind == "" && !showAll && tool.Kind != "tool":
 		case kind != "" && tool.Kind != kind:
@@ -37,58 +42,97 @@ func cmdList(cfg Config, args []string) error {
 		}
 	}
 
-	if asJSON {
-		if tools == nil {
-			tools = []Tool{}
+	var found []Tool
+	if !onlyRegistered && tag == "" && (kind == "" || kind == "tool") {
+		for _, tool := range discover(cfg, result.Tools) {
+			if tool.matches(query) {
+				found = append(found, tool)
+			}
 		}
-		return emitJSON(tools)
+	}
+
+	if asJSON {
+		return emitJSON(append(append([]Tool{}, tools...), found...))
 	}
 	if onlyIDs {
-		for _, tool := range tools {
+		for _, tool := range append(tools, found...) {
 			fmt.Println(tool.ID)
 		}
 		return nil
 	}
 
-	if len(tools) == 0 {
+	if len(tools) == 0 && len(found) == 0 {
 		fmt.Fprintln(os.Stderr, "nothing found")
 		printManifestErrors(result.Errors)
 		return nil
 	}
 
-	width := 0
-	for _, tool := range tools {
-		width = max(width, len(tool.ID))
-	}
-	for _, tool := range tools {
-		badge := statusBadge(tool.Status)
-		if badge != "" {
-			badge = " " + badge
+	printTools(tools)
+	listFound := query != "" || onlyFound || len(found) <= foundListLimit
+	switch {
+	case len(found) == 0:
+	case listFound:
+		if len(tools) > 0 {
+			fmt.Println()
 		}
-		fmt.Printf("%s%s%s  %s%s\n", color.bold, pad(tool.ID, width), color.reset, tool.Summary, badge)
+		fmt.Printf("%sfound in the workspace, not registered%s\n", color.dim, color.reset)
+		printTools(found)
+	default:
+		fmt.Fprintf(os.Stderr, "\n%d more found in the workspace, not registered — `jig ls <words>` searches them, `jig ls --found` lists them\n", len(found))
 	}
 
-	fmt.Fprintf(os.Stderr, "\n%d tools · %s\n", len(tools), cfg.Root)
+	fmt.Fprintf(os.Stderr, "\n%s · %s\n", listCounts(len(tools), len(found), onlyFound), cfg.Root)
 	printManifestErrors(result.Errors)
 	return nil
 }
 
+func printTools(tools []Tool) {
+	width := 0
+	for _, tool := range tools {
+		width = max(width, min(len(tool.ID), 48))
+	}
+	for _, tool := range tools {
+		summary := tool.Summary
+		if summary == "" {
+			summary = color.dim + originLabels[tool.Origin] + color.reset
+		}
+		if badge := statusBadge(tool.Status); badge != "" {
+			summary += " " + badge
+		}
+		fmt.Printf("%s%s%s  %s\n", color.bold, pad(tool.ID, width), color.reset, summary)
+	}
+}
+
+func listCounts(registered, found int, onlyFound bool) string {
+	switch {
+	case onlyFound:
+		return fmt.Sprintf("%d found", found)
+	case found > 0:
+		return plural(registered, "tool") + fmt.Sprintf(" · %d found", found)
+	}
+	return plural(registered, "tool")
+}
+
 func lookupTool(cfg Config, id string, allowPartial bool) (Tool, error) {
 	result := scan(cfg)
-
-	for _, tool := range result.Tools {
-		if tool.ID == id {
-			return tool, nil
-		}
+	if tool, ok := exactTool(result.Tools, id); ok {
+		return tool, nil
 	}
 
-	var partial []Tool
-	var names []string
-	for _, tool := range result.Tools {
-		if strings.Contains(tool.ID, id) {
-			partial = append(partial, tool)
-			names = append(names, tool.ID)
+	partial := partialTools(result.Tools, id)
+	if len(partial) == 0 {
+		found := discover(cfg, result.Tools)
+		for _, candidate := range []string{id, workspaceID(cfg, id)} {
+			if tool, ok := exactTool(found, candidate); ok {
+				return tool, nil
+			}
 		}
+		partial = partialTools(found, id)
+	}
+
+	names := make([]string, 0, len(partial))
+	for _, tool := range partial {
+		names = append(names, tool.ID)
 	}
 
 	switch {
@@ -100,6 +144,41 @@ func lookupTool(cfg Config, id string, allowPartial bool) (Tool, error) {
 		return Tool{}, fmt.Errorf("ambiguous id %q: %s", id, strings.Join(names, ", "))
 	}
 	return Tool{}, fmt.Errorf("no tool %q, see `jig ls`", id)
+}
+
+func exactTool(tools []Tool, id string) (Tool, bool) {
+	for _, tool := range tools {
+		if tool.ID == id {
+			return tool, true
+		}
+	}
+	return Tool{}, false
+}
+
+func partialTools(tools []Tool, id string) []Tool {
+	var partial []Tool
+	for _, tool := range tools {
+		if strings.Contains(tool.ID, id) {
+			partial = append(partial, tool)
+		}
+	}
+	return partial
+}
+
+func workspaceID(cfg Config, id string) string {
+	name, task, isTask := strings.Cut(id, ":")
+	abs, err := filepath.Abs(name)
+	if err != nil {
+		return id
+	}
+	rel, inside := within(cfg.Root, abs)
+	if !inside || rel == "." {
+		return id
+	}
+	if isTask {
+		return filepath.ToSlash(rel) + ":" + task
+	}
+	return filepath.ToSlash(rel)
 }
 
 func cmdShow(cfg Config, args []string) error {
@@ -116,7 +195,7 @@ func cmdShow(cfg Config, args []string) error {
 		return emitJSON(tool)
 	}
 
-	fmt.Printf("%s%s%s — %s\n\n", color.bold, tool.ID, color.reset, tool.Summary)
+	fmt.Printf("%s%s%s — %s\n\n", color.bold, tool.ID, color.reset, firstNonEmpty(tool.Summary, originLabels[tool.Origin]))
 	if why := strings.TrimSpace(tool.Why); why != "" {
 		fmt.Printf("%s\n\n", why)
 	}
@@ -158,7 +237,11 @@ func toolFields(cfg Config, tool Tool, safety string) [][2]string {
 		{"ticket", tool.Ticket},
 		{"tags", strings.Join(tool.Tags, ", ")},
 		{"path", tool.Path},
-		{"manifest", relTo(cfg.Root, tool.ManifestPath)},
+	}
+	if tool.Registered {
+		optional = append(optional, [2]string{"manifest", relTo(cfg.Root, tool.ManifestPath)})
+	} else {
+		optional = append(optional, [2]string{"registry", foundNote(tool)})
 	}
 	for _, field := range optional {
 		if field[1] != "" {
@@ -241,6 +324,9 @@ func cmdRun(cfg Config, args []string, record *runRecord) error {
 
 	if tool.Status == "deprecated" {
 		fmt.Fprintf(os.Stderr, "%sthis tool is deprecated%s\n", color.yellow, color.reset)
+	}
+	if !tool.Registered {
+		fmt.Fprintf(os.Stderr, "%s%s%s\n", color.dim, foundNote(tool), color.reset)
 	}
 	if tool.NeedsConfirm && !confirmed {
 		return fmt.Errorf("safety=%s on %s without guard: self — confirm with `jig run --yes %s`",

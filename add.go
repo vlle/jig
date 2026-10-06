@@ -136,10 +136,18 @@ func planAdd(cfg Config, tools []Tool, path string, opts addOptions) (Manifest, 
 		Tags:    opts.tags,
 		Status:  "active",
 	}
+	tool := resolveTool(cfg, manifest, "", map[string]repoInfo{})
 	if manifest.Run == "" {
-		manifest.Workdir, manifest.Run, err = guessRun(cfg, resolveTool(cfg, manifest, "", map[string]repoInfo{}))
+		manifest.Workdir, manifest.Run, err = guessRun(cfg, tool)
 		if err != nil {
 			return Manifest{}, fmt.Errorf("%s: %w", path, err)
+		}
+	}
+	if opts.summary == "" {
+		if entry := sourcePath(tool); entry != "" {
+			if summary, _ := describeScript(entry); summary != "" {
+				manifest.Summary = summary
+			}
 		}
 	}
 	return manifest, manifest.validate(path)

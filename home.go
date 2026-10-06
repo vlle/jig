@@ -191,9 +191,11 @@ func ago(at time.Time) string {
 }
 
 func (m tuiModel) homeView() string {
-	var counts [3]int
+	var counts [4]int
 	for _, tool := range m.all {
 		switch {
+		case !tool.Registered:
+			counts[3]++
 		case tool.Status == "deprecated":
 			counts[2]++
 		case tool.Kind == "env":
@@ -210,6 +212,9 @@ func (m tuiModel) homeView() string {
 	if counts[2] > 0 {
 		stats += fmt.Sprintf(" · %d deprecated", counts[2])
 	}
+	if counts[3] > 0 {
+		stats += styleDim.Render(fmt.Sprintf(" · %d found, not registered", counts[3]))
+	}
 
 	sections := []string{
 		renderLogo(m.tick),
@@ -220,8 +225,12 @@ func (m tuiModel) homeView() string {
 		m.doctorLine(),
 	}
 
-	if len(m.all) == 0 {
-		sections = append(sections, "", homeWarn.Render("the registry is empty — `jig new <id>`, or register what doctor finds"))
+	switch {
+	case counts[0]+counts[1]+counts[2] > 0:
+	case counts[3] > 0:
+		sections = append(sections, "", homeWarn.Render("nothing registered yet — type to search what jig found, `jig add <path>` keeps a script"))
+	case m.discovered:
+		sections = append(sections, "", homeWarn.Render("the registry is empty — `jig new <id>` scaffolds the first tool"))
 	}
 
 	if len(m.recent) > 0 {

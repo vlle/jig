@@ -22,6 +22,7 @@ Go 1.24 or newer. `golangci-lint` v2.13 is what CI runs.
 | `config.go` | `jig.yml` discovery and defaults; nothing org-specific is hardcoded |
 | `manifest.go`, `registry.go` | manifest schema, validation, YAML output; registry scan and git info read from `.git/` |
 | `commands.go` | `ls`, `show`, `src`, `run` |
+| `discover.go`, `header.go`, `runners.go` | the workspace walk; scripts and make/just/npm/task targets without a manifest, their summaries |
 | `add.go`, `new.go`, `doctor.go`, `index.go`, `init.go`, `hook.go`, `agent.go`, `demo.go`, `version.go` | one command each |
 | `home.go`, `tui.go` | the home screen and browser (bubbletea) |
 | `internal/anim` | stdlib-only animation kit, copied verbatim into Go scaffolds as `screen.go` |

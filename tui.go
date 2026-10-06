@@ -55,6 +55,9 @@ type tuiModel struct {
 	doctorRunning bool
 	doctorFiles   *atomic.Int64
 
+	registered []Tool
+	discovered bool
+
 	sourceID      string
 	sourceBody    string
 	sourceLoading bool
@@ -63,6 +66,7 @@ type tuiModel struct {
 type (
 	tickMsg    struct{}
 	doctorDone struct{ report doctorReport }
+	foundDone  struct{ tools []Tool }
 	sourceDone struct {
 		id   string
 		path string
@@ -99,7 +103,14 @@ func newTUI(cfg Config, tools []Tool) tuiModel {
 }
 
 func (m tuiModel) Init() tea.Cmd {
-	return tea.Batch(tick(), m.runDoctor())
+	return tea.Batch(tick(), m.runDoctor(), m.runDiscover())
+}
+
+func (m tuiModel) runDiscover() tea.Cmd {
+	cfg, registered := m.cfg, m.registered
+	return func() tea.Msg {
+		return foundDone{tools: discover(cfg, registered)}
+	}
 }
 
 func tick() tea.Cmd {
@@ -153,6 +164,13 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case doctorDone:
 		report := typed.report
 		m.doctor, m.doctorRunning = &report, false
+		m.renderPreview()
+		return m, nil
+
+	case foundDone:
+		m.discovered = true
+		m.all = append(m.all, typed.tools...)
+		m.refilter()
 		m.renderPreview()
 		return m, nil
 
@@ -352,15 +370,34 @@ func (m *tuiModel) move(delta int) {
 }
 
 func (m *tuiModel) applyFilter() {
-	query := m.filter.Value()
+	m.shown = m.matching()
+	m.cursor, m.offset = 0, 0
+}
 
-	m.shown = nil
-	for _, tool := range m.all {
-		if tool.matches(query) {
-			m.shown = append(m.shown, tool)
+func (m *tuiModel) refilter() {
+	currentID := ""
+	if tool := m.current(); tool != nil {
+		currentID = tool.ID
+	}
+	m.shown = m.matching()
+	m.cursor = 0
+	for i, tool := range m.shown {
+		if tool.ID == currentID {
+			m.cursor = i
 		}
 	}
-	m.cursor, m.offset = 0, 0
+	m.offset = min(m.offset, m.cursor)
+}
+
+func (m tuiModel) matching() []Tool {
+	query := m.filter.Value()
+	var shown []Tool
+	for _, tool := range m.all {
+		if tool.matches(query) {
+			shown = append(shown, tool)
+		}
+	}
+	return shown
 }
 
 func (m tuiModel) current() *Tool {
@@ -429,7 +466,7 @@ func (m *tuiModel) renderPreview() {
 func (m tuiModel) describe(tool Tool) string {
 	var out strings.Builder
 
-	fmt.Fprintf(&out, "%s\n%s\n\n", styleTitle.Render(tool.ID), tool.Summary)
+	fmt.Fprintf(&out, "%s\n%s\n\n", styleTitle.Render(tool.ID), firstNonEmpty(tool.Summary, originLabels[tool.Origin]))
 	if why := strings.TrimSpace(tool.Why); why != "" {
 		fmt.Fprintf(&out, "%s\n\n", why)
 	}
@@ -517,12 +554,18 @@ func (m tuiModel) renderList() string {
 		}
 		if len(label) > width {
 			label = label[:width]
+			if !tool.Registered {
+				label = "…" + tool.ID[len(tool.ID)-width+1:]
+			}
 		}
-		if i == m.cursor {
+		switch {
+		case i == m.cursor:
 			out.WriteString(styleSelected.Render(pad(label, width)) + "\n")
-			continue
+		case !tool.Registered:
+			out.WriteString(styleDim.Render(label) + "\n")
+		default:
+			out.WriteString(label + "\n")
 		}
-		out.WriteString(label + "\n")
 	}
 	return out.String()
 }
@@ -552,6 +595,7 @@ func runTUI(cfg Config, record *runRecord) error {
 	}
 
 	model := newTUI(cfg, tools)
+	model.registered = result.Tools
 	model.doctorRunning = true
 	if len(result.Errors) > 0 {
 		model.status = fmt.Sprintf("%d manifests failed to load, see `jig doctor`", len(result.Errors))

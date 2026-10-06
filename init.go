@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 func cmdInit(args []string) error {
@@ -46,28 +47,41 @@ func cmdInit(args []string) error {
 	if err != nil {
 		return err
 	}
-	var report doctorReport
-	_ = s.Step("looking for scripts that already exist", func(update func(string)) error {
-		report = diagnose(cfg, func(files int) { update(fmt.Sprintf("%d files", files)) })
+	var found []Tool
+	_ = s.Step("looking for scripts and tasks that already exist", func(update func(string)) error {
+		found = discover(cfg, nil)
+		update(fmt.Sprintf("%d found", len(found)))
 		return nil
 	})
 	s.Close()
 
-	orphans := 0
-	for _, item := range report.Findings {
-		if item.Kind == "script without manifest" {
-			orphans = len(item.Paths)
-		}
-	}
-
 	fmt.Println()
-	if orphans > 0 {
-		noun := "scripts have"
-		if orphans == 1 {
-			noun = "script has"
-		}
-		fmt.Printf("%d %s no manifest yet — `jig doctor` lists them, `jig add <path>` registers the ones worth keeping.\n", orphans, noun)
+	if summary := foundSummary(found); summary != "" {
+		fmt.Printf("found %s — searchable now: `jig ls <words>`\n", summary)
+		fmt.Println("register the scripts worth keeping with `jig add <path>`; `jig doctor` lists the ones without a manifest")
 	}
 	fmt.Println("next: `jig new <id>` for a new tool, `jig index` for TOOLS.md, `jig agent rules` for your coding agent")
 	return nil
+}
+
+func foundSummary(found []Tool) string {
+	counts := map[string]int{}
+	described := 0
+	for _, tool := range found {
+		counts[tool.Origin]++
+		if tool.Origin == originScript && tool.Summary != "" {
+			described++
+		}
+	}
+
+	var parts []string
+	if n := counts[originScript]; n > 0 {
+		parts = append(parts, fmt.Sprintf("%s (%d with a description)", plural(n, "script"), described))
+	}
+	for _, origin := range []string{"make", "just", "npm", "task"} {
+		if n := counts[origin]; n > 0 {
+			parts = append(parts, plural(n, originLabels[origin]))
+		}
+	}
+	return strings.Join(parts, ", ")
 }

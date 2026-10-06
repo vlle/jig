@@ -16,6 +16,8 @@ with the rules, a skill and a hook that make an agent search the registry before
 writes a line.
 
 - **Find** — `jig ls stock`, or just `jig` for the home screen with search-as-you-type.
+  It works from the first minute: scripts that have no manifest yet and the targets in
+  Makefile, justfile, package.json and Taskfile are searched too.
 - **Run** — `jig run <id>` from the right directory, arguments passed through untouched,
   `--yes` required for anything that writes to production.
 - **Scaffold** — `jig new <id>` refuses when a similar tool already exists; otherwise it
@@ -110,6 +112,7 @@ jig runs on macOS and Linux. `jig run` starts tools through `bash`, so on Window
 jig                        # home screen: search, browse, doctor, recent runs
 jig ls stock               # search id, summary, why, tags and path; all words must match
 jig ls --tag incident      # by tag; --kind env for secret profiles, --all for everything
+jig ls --found             # only what has no manifest; --registered for the registry alone
 jig show stock-diag        # what it does, how to run it, flags, safety, targets
 jig src stock-diag         # the source (through bat if it is installed)
 jig run stock-diag -- -item 280982988
@@ -129,6 +132,34 @@ In the home screen, start typing to search; `enter` opens the browser, `ctrl+d` 
 doctor, `esc` quits. In the browser: `j`/`k`, `/` search, `tab` docs ⇄ source, `enter`
 run, `e` open in `$EDITOR`, `d` doctor, `y` copy the command, `esc` back home.
 
+## What jig finds without a manifest
+
+`jig ls` lists the registry first, then what it found in the workspace that nobody has
+registered yet:
+
+```text
+$ jig ls stock
+found in the workspace, not registered
+scripts/check-stock.sh   tells why a published item shows out of stock
+scripts/check_stock2.py  Same question, asked from the warehouse side
+```
+
+- **Scripts** without a manifest, the same files `jig doctor` reports. The summary comes
+  from the header comment, a Python docstring or `argparse` description, or the usage line.
+  jig only reads the file and never runs it. A Go tool is its `package main` directory;
+  `.py` files need a shebang or a `__main__` block and `.js` files a shebang or
+  `process.` without `document.`, so library modules and browser code stay out.
+- **Targets** of `Makefile` (`## description` or the comment above), `justfile` (the
+  comment above or `[doc(...)]`, private recipes skipped), `package.json` scripts (run with
+  npm, pnpm, yarn or bun, whichever lockfile is there) and `Taskfile.yml` (`desc`).
+
+The id is the path from the workspace root (`scripts/check-stock.sh`) or the file and the
+target (`Makefile:build`, `web/package.json:lint`). `jig show`, `jig src`, `jig run` and
+the home screen work with these ids; `run` needs the exact id and accepts a path relative to
+the current directory. Found entries carry `"registered": false` and an `origin` (`script`,
+`make`, `just`, `npm`, `task`) in `--json`; `safety` is `writes` because nobody has checked.
+`.jigignore` and `skip` hide them the same way they hide doctor findings.
+
 ## Adopting the scripts you already have
 
 `jig init` and `jig doctor` list every script without a manifest. `jig add` registers them:
@@ -141,7 +172,8 @@ jig add tools/*.py         # several at once; summary and why stay TODO for you 
 ```
 
 The id comes from the file name, or from the directory for `main.go`, `run.js` and the
-like; `--id` overrides it. `run` is written the way jig will execute it: `./x.sh` for an
+like; `--id` overrides it. Without `--summary` the summary comes from the script's header the
+same way `jig ls` finds it. `run` is written the way jig will execute it: `./x.sh` for an
 executable, otherwise `bash`, `python3`, `node` or `go run`, with `workdir` pointing at the
 Go module when the tool lives in a nested one. Without `--safety` the manifest says
 `writes`, because nobody has checked yet. `jig doctor` reports the manifest as unfinished

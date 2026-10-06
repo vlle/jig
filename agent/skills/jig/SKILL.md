@@ -16,7 +16,9 @@ jig ls "<action words>"
 
 Search at least twice: by the subject (`stock`, `orders`, `invoices`) and by the action
 (`check`, `diag`, `export`, `stats`). `jig ls --tag <tag>` and `jig ls --all` (deprecated
-tools and secret profiles too) help when the words do not match.
+tools and secret profiles too) help when the words do not match. Below the registry,
+`jig ls` lists what has no manifest yet under "found in the workspace, not registered":
+scripts and make, just, npm and task targets. They count as existing tools.
 
 **Report the result to the user before doing anything else.** If `jig` is missing or
 there is no `jig.yml` above the current directory, say so and stop — do not improvise.
@@ -27,8 +29,8 @@ there is no `jig.yml` above the current directory, say so and stop — do not im
   This is the default. Create a new tool only when extending really does not work, and say why.
 - **A tool is close** → show it and ask the user: extend it or create a new one.
   Do not decide for them.
-- **The script exists but has no manifest** (`jig doctor` lists it as "script without
-  manifest") → do not scaffold, register it: read it, then
+- **The script exists but has no manifest** (found by `jig ls`, or listed by `jig doctor`
+  as "script without manifest") → do not scaffold, register it: read it, then
   `jig add <path> --summary "..." --why "..." --safety ... --targets a,b --tags a,b`
   and go to step 5. `jig add` works out `run` and `workdir`; do not write the YAML by hand.
 - **Nothing fits** → step 3.

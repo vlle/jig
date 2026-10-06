@@ -47,6 +47,8 @@ type Tool struct {
 	TargetDir    string `json:"target_dir"`
 	SourceAbs    string `json:"source_abs,omitempty"`
 	NeedsConfirm bool   `json:"needs_confirm"`
+	Registered   bool   `json:"registered"`
+	Origin       string `json:"origin"`
 }
 
 var (
