@@ -6,6 +6,8 @@ and `doctor` and the manifest schema are the public API.
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-07
+
 ### Added
 
 - A Claude Code plugin: `/plugin marketplace add vlle/jig`, `/plugin install jig@jig`. It
@@ -85,6 +87,7 @@ production `--yes` guard, `new` with the go, go-parallel, bash and node scaffold
 animation kit, `doctor`, `index`, `init`, the home screen and tool browser, the run log,
 `jig agent rules|skill` and the Claude Code `PreToolUse` hook.
 
-[Unreleased]: https://github.com/vlle/jig/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/vlle/jig/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/vlle/jig/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/vlle/jig/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/vlle/jig/releases/tag/v1.0.0

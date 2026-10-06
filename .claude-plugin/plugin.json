@@ -1,6 +1,6 @@
 {
   "name": "jig",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Makes Claude search the workspace's script registry before writing a new script: rules at session start, a hook that bounces new script files back to `jig ls`, and skills to reuse, scaffold and register tools.",
   "author": {
     "name": "the jig authors",

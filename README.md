@@ -357,7 +357,7 @@ CI hold the line:
 - uses: actions/setup-go@v7
   with:
     go-version: stable
-- run: go install github.com/vlle/jig@v1.1.0
+- run: go install github.com/vlle/jig@v1.2.0
 - run: jig doctor
 ```
 
