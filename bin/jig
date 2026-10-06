@@ -1,0 +1,100 @@
+#!/usr/bin/env bash
+# Runs the jig build that matches the Claude Code plugin version, installing it on first use.
+set -euo pipefail
+
+self=${BASH_SOURCE[0]}
+root=$(cd "$(dirname "$self")/.." && pwd -P)
+
+if [[ -n ${JIG_BIN:-} ]]; then
+	exec "$JIG_BIN" "$@"
+fi
+
+version=$(sed -n 's/^ *"version": *"\([^"]*\)".*/\1/p' "$root/.claude-plugin/plugin.json" | head -n 1)
+cache=$root/.cache
+binary=$cache/jig-v$version
+
+if [[ -x $binary ]]; then
+	exec "$binary" "$@"
+fi
+
+build() {
+	command -v go >/dev/null 2>&1 || return 1
+	echo "jig: building v$version from the plugin source, once" >&2
+	(cd "$root" && GOWORK=off GOFLAGS=-mod=readonly go build -trimpath -ldflags "-s -w -X main.version=v$version" -o "$1" .) >&2
+}
+
+sha256() {
+	if command -v sha256sum >/dev/null 2>&1; then
+		sha256sum "$1"
+	else
+		shasum -a 256 "$1"
+	fi | cut -d ' ' -f 1
+}
+
+download() {
+	command -v curl >/dev/null 2>&1 || return 1
+	local os arch archive base dir want
+	os=$(uname -s | tr '[:upper:]' '[:lower:]')
+	arch=$(uname -m)
+	case $arch in
+	x86_64) arch=amd64 ;;
+	aarch64) arch=arm64 ;;
+	esac
+	archive=jig_${os}_${arch}.tar.gz
+	base=${JIG_DOWNLOAD_URL:-https://github.com/vlle/jig/releases/download}/v$version
+	dir=$1.d
+
+	echo "jig: downloading v$version for $os/$arch, once" >&2
+	mkdir -p "$dir" &&
+		curl -fsSL --connect-timeout 10 --max-time 300 -o "$dir/$archive" "$base/$archive" &&
+		curl -fsSL --connect-timeout 10 --max-time 60 -o "$dir/checksums.txt" "$base/checksums.txt" || return 1
+
+	want=$(awk -v name="$archive" '$2 == name { print $1 }' "$dir/checksums.txt")
+	if [[ -z $want || $(sha256 "$dir/$archive") != "$want" ]]; then
+		echo "jig: $archive does not match checksums.txt of v$version" >&2
+		return 1
+	fi
+	tar -xzf "$dir/$archive" -C "$dir" jig && mv -f "$dir/jig" "$1"
+}
+
+other_jig() {
+	local candidate
+	while IFS= read -r candidate; do
+		if [[ ! $candidate -ef $self ]]; then
+			echo "$candidate"
+			return 0
+		fi
+	done < <(type -ap jig)
+	return 1
+}
+
+tmp=
+cleanup() {
+	if [[ -n $tmp ]]; then
+		rm -rf "$tmp" "$tmp.d"
+	fi
+}
+trap cleanup EXIT
+
+if mkdir -p "$cache" 2>/dev/null && tmp=$(mktemp "$cache/jig.XXXXXX" 2>/dev/null); then
+	if build "$tmp" || download "$tmp"; then
+		chmod +x "$tmp"
+		mv -f "$tmp" "$binary"
+		cleanup
+		trap - EXIT
+		exec "$binary" "$@"
+	fi
+fi
+
+if fallback=$(other_jig); then
+	exec "$fallback" "$@"
+fi
+
+cat >&2 <<EOF
+jig: no binary for plugin v$version in $cache.
+  Install Go 1.24 or newer and the plugin builds jig from its source, or install jig:
+  go install github.com/vlle/jig@latest, or a release from https://github.com/vlle/jig/releases.
+  JIG_BIN=/path/to/jig points the plugin at a binary you already have. In a sandboxed shell,
+  start a new Claude Code session: the plugin installs jig when the session starts.
+EOF
+exit 127

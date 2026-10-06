@@ -27,7 +27,8 @@ Go 1.24 or newer. `golangci-lint` v2.13 is what CI runs.
 | `home.go`, `tui.go` | the home screen and browser (bubbletea) |
 | `internal/anim` | stdlib-only animation kit, copied verbatim into Go scaffolds as `screen.go` |
 | `templates/` | scaffolds for `jig new` |
-| `agent/` | the rules and skill printed by `jig agent` |
+| `agent/` | the rules and skills printed by `jig agent` and shipped in the plugin |
+| `.claude-plugin/`, `bin/jig` | the Claude Code plugin and marketplace manifests; the launcher that builds or downloads the binary |
 | `e2e/` | black-box tests of the built binary |
 
 ## Conventions

@@ -11,9 +11,49 @@ worse: a fresh session has no memory of the probe it wrote yesterday, so it writ
 again.
 
 jig keeps a manifest for every script that is worth running twice, makes them easy to
-find, runs them safely, and scaffolds new ones with the plumbing already done. It ships
-with the rules, a skill and a hook that make an agent search the registry before it
-writes a line.
+find, runs them safely, and scaffolds new ones with the plumbing already done. In Claude
+Code it is a plugin that makes the agent search the registry before it writes a line;
+other agents get the same rules and skill as text.
+
+## Claude Code
+
+```text
+/plugin marketplace add vlle/jig
+/plugin install jig@jig
+```
+
+Then run `/jig:setup` in your workspace. From a shell the same is
+`claude plugin marketplace add vlle/jig && claude plugin install jig@jig`.
+
+In a session inside a jig workspace:
+
+- **Claude starts with the rules.** A `SessionStart` hook adds them to the context: search
+  the registry twice before writing a script, run or extend what fits, scaffold with
+  `jig new` instead of starting from an empty file, finish the manifest. Outside a
+  workspace the plugin adds nothing.
+- **A new script file goes back to the search.** When Claude is about to `Write` a new
+  script into a tool directory that no manifest covers, the hook denies it with a reason
+  Claude acts on:
+
+  ```text
+  jig: scripts/stock-recount.sh would be a new script. Search the registry before writing
+  one: `jig ls stock recount` (try a synonym too). If a tool fits, reuse or extend it
+  (`jig show <id>`, `jig src <id>`). If nothing fits, scaffold with
+  `jig new <id> --kind go|go-parallel|bash|node --dir scripts`, then edit the generated files.
+  ```
+
+  Edits, files outside the workspace and files inside a registered tool pass.
+  `JIG_HOOK=off` turns the hooks off.
+- **Two skills.** `/jig:jig <what you need>` walks the route: search, decide, scaffold,
+  fill the manifest, verify. `/jig:setup` creates a workspace and registers the scripts
+  you already have.
+- **`jig` comes with it.** On first use the plugin builds jig from its own source when Go
+  1.24 or newer is installed, and otherwise downloads the release binary for its version
+  and checks it against `checksums.txt`. A `jig` that is already on your PATH comes first
+  in Claude's shell, so keep it current or remove it; `JIG_BIN` points the plugin at a
+  binary of your choice.
+
+## What jig does
 
 - **Find** — `jig ls stock`, or just `jig` for the home screen with search-as-you-type.
   It works from the first minute: scripts that have no manifest yet and the targets in
@@ -31,9 +71,9 @@ writes a line.
 
 Scripts stay where they are. jig only knows about them.
 
-## Install into your agent
+## Codex, Cursor and other agents
 
-Paste this into Claude Code, Codex, Cursor or any agent with a shell:
+Paste this into any agent with a shell (in Claude Code the plugin above does the same):
 
 ````text
 Install jig (https://github.com/vlle/jig), a registry for the scripts in my workspace,
@@ -50,16 +90,16 @@ and wire it into how you work. Ask before anything that writes outside the works
    propose: summary (the problem it answers, one line), why, safety (read-only / writes /
    destructive, honestly), targets, tags. Register the ones I approve with
    `jig add <path> --summary "..." --why "..." --safety ... --targets a,b --tags a,b`;
-   put files that are not tools into .jigignore. Repeat until `jig doctor` exits 0,
-   then run `jig index`.
+   put files that are not tools into .jigignore. Then run `jig index`; `jig doctor`
+   must exit 0.
 4. Add the output of `jig agent rules` to your persistent instructions: CLAUDE.md for
    Claude Code, AGENTS.md for Codex and most others, at the workspace root unless I ask
    for the user-level file. Show me the diff before writing.
 5. If you support skills, save the output of `jig agent skill` as a skill:
    ~/.claude/skills/jig/SKILL.md for Claude Code, ~/.codex/skills/jig/SKILL.md for Codex.
-6. Claude Code only, and only if I say yes: merge this hook into ~/.claude/settings.json
-   (or .claude/settings.json in the workspace). It bounces a brand-new script file back
-   to the registry search; set JIG_HOOK=off to bypass it.
+6. Claude Code without the plugin, and only if I say yes: merge this hook into
+   ~/.claude/settings.json (or .claude/settings.json in the workspace). It bounces a
+   brand-new script file back to the registry search; set JIG_HOOK=off to bypass it.
    {"hooks":{"PreToolUse":[{"matcher":"Write","hooks":[{"type":"command","command":"jig hook"}]}]}}
 7. Finish with a short report: what was installed and where, how many tools are
    registered, and how to undo each step.
@@ -295,11 +335,16 @@ without escape codes. `jig demo` shows all of it.
   before writing, extend before creating, scaffold instead of an empty file, finish the
   manifest, keep `jig doctor` clean.
 - `jig agent skill` — a skill (`/jig <what you need>`) that walks the same route step by step.
-- `jig hook` — a Claude Code `PreToolUse` hook. When the agent is about to `Write` a new
-  script into a tool directory that no manifest covers, the hook denies it with a reason
-  that names the `jig ls` query to run and the `jig new` command to use. Edits, files
-  outside the workspace, ignored paths and files inside a registered tool pass through.
-  `JIG_HOOK=off` disables it.
+- `jig hook` — the Claude Code hook behind the plugin, for `PreToolUse` and `SessionStart`.
+  Before a `Write` of a new script into a tool directory that no manifest covers, it denies
+  the write with a reason that names the `jig ls` query to run and the `jig new` command to
+  use. Edits, files outside the workspace, ignored paths and files inside a registered
+  tool pass through. At session start inside a workspace it adds the rules and the number
+  of registered tools to the context, and outside one it prints nothing. `JIG_HOOK=off`
+  disables both.
+- The plugin lives in [`.claude-plugin/`](.claude-plugin/): the skills from `agent/skills/`,
+  both hooks, and [`bin/jig`](bin/jig), the launcher that builds or downloads the binary
+  matching the plugin version into the plugin's `.cache/`.
 
 ## In CI
 
@@ -343,7 +388,9 @@ latest runs from this file.
 | `JIG_REGISTRY`, `JIG_INDEX` | override `registry` and `index` from `jig.yml` |
 | `JIG_LOG` | run log path, `-` disables it |
 | `JIG_ANIM` | `auto` (default), `always` or `never` for jig's own spinners |
-| `JIG_HOOK` | `off` makes `jig hook` allow everything |
+| `JIG_HOOK` | `off` makes `jig hook` allow everything and add no context |
+| `JIG_BIN` | the binary the plugin launcher runs instead of its own build |
+| `JIG_DOWNLOAD_URL` | where the plugin launcher downloads releases from (a mirror) |
 | `JIG_RUN_ID`, `JIG_TOOL` | set by `jig run` for the tool it starts |
 | `NO_COLOR` | no colour and no animation |
 
@@ -353,6 +400,8 @@ latest runs from this file.
 go test ./...              # unit tests and the end-to-end suite (builds the binary)
 golangci-lint run
 vhs docs/demo.tape         # re-record docs/demo.gif
+claude plugin validate .   # the plugin and marketplace manifests
+go build -o jig . && JIG_BIN=$PWD/jig claude --plugin-dir .   # try the plugin with this build
 ```
 
 The end-to-end suite in `e2e/` runs the real binary against a temporary workspace for every

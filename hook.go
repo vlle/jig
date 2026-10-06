@@ -10,17 +10,19 @@ import (
 )
 
 type hookInput struct {
-	ToolName  string `json:"tool_name"`
-	Cwd       string `json:"cwd"`
-	ToolInput struct {
+	HookEventName string `json:"hook_event_name"`
+	ToolName      string `json:"tool_name"`
+	Cwd           string `json:"cwd"`
+	ToolInput     struct {
 		FilePath string `json:"file_path"`
 	} `json:"tool_input"`
 }
 
-type hookDecision struct {
+type hookOutput struct {
 	HookEventName            string `json:"hookEventName"`
-	PermissionDecision       string `json:"permissionDecision"`
-	PermissionDecisionReason string `json:"permissionDecisionReason"`
+	PermissionDecision       string `json:"permissionDecision,omitempty"`
+	PermissionDecisionReason string `json:"permissionDecisionReason,omitempty"`
+	AdditionalContext        string `json:"additionalContext,omitempty"`
 }
 
 func cmdHook(in io.Reader, out io.Writer) error {
@@ -33,18 +35,39 @@ func cmdHook(in io.Reader, out io.Writer) error {
 		return nil
 	}
 
-	reason := hookVerdict(input)
-	if reason == "" {
+	output, ok := hookResponse(input)
+	if !ok {
 		return nil
 	}
+	return json.NewEncoder(out).Encode(map[string]hookOutput{"hookSpecificOutput": output})
+}
 
-	return json.NewEncoder(out).Encode(map[string]hookDecision{
-		"hookSpecificOutput": {
-			HookEventName:            "PreToolUse",
-			PermissionDecision:       "deny",
-			PermissionDecisionReason: reason,
-		},
-	})
+func hookResponse(input hookInput) (hookOutput, bool) {
+	if input.HookEventName == "SessionStart" {
+		text := sessionContext(input.Cwd)
+		return hookOutput{HookEventName: "SessionStart", AdditionalContext: text}, text != ""
+	}
+	reason := hookVerdict(input)
+	return hookOutput{HookEventName: "PreToolUse", PermissionDecision: "deny", PermissionDecisionReason: reason}, reason != ""
+}
+
+func sessionContext(cwd string) string {
+	cfg, err := loadConfig(cwd)
+	if err != nil {
+		return ""
+	}
+	rules, err := agentFiles.ReadFile(agentTexts["rules"])
+	if err != nil {
+		return ""
+	}
+
+	tools := 0
+	for _, tool := range scan(cfg).Tools {
+		if tool.Kind != "env" && tool.Status != "deprecated" {
+			tools++
+		}
+	}
+	return fmt.Sprintf("This session runs in the jig workspace %s (%s registered).\n\n%s", cfg.Root, plural(tools, "tool"), rules)
 }
 
 func hookVerdict(input hookInput) string {

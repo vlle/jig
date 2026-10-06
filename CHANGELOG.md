@@ -8,6 +8,14 @@ and `doctor` and the manifest schema are the public API.
 
 ### Added
 
+- A Claude Code plugin: `/plugin marketplace add vlle/jig`, `/plugin install jig@jig`. It
+  adds the agent rules at session start inside a workspace, runs the `Write` hook, ships
+  the `/jig:jig` skill and a new `/jig:setup` skill, and puts `jig` on the PATH of Claude's
+  shell. Its launcher builds jig from the plugin source when Go is installed, otherwise
+  downloads the release binary for the plugin version and checks it against
+  `checksums.txt`. `JIG_BIN` and `JIG_DOWNLOAD_URL` override the binary and the source.
+- `jig hook` handles `SessionStart`: inside a workspace it adds the rules and the number of
+  registered tools to the session context, outside one it prints nothing.
 - `jig ls` finds what has no manifest yet and lists it after the registry: scripts that
   `jig doctor` reports, and the targets of `Makefile`, `justfile`, `package.json` scripts and
   `Taskfile.yml`. The summary comes from the header comment, a Python docstring or

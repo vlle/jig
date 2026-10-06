@@ -30,7 +30,7 @@ const usage = `jig — find, run and scaffold the scripts in your workspace
   jig init   [DIR]                            create jig.yml and an empty registry
   jig demo   [--only NAME] [--speed N]        the animation kit scaffolds ship with
   jig agent  rules|skill                      text to install jig into a coding agent
-  jig hook                                    Claude Code PreToolUse hook (stdin JSON)
+  jig hook                                    Claude Code PreToolUse and SessionStart hook
   jig completion bash|zsh|fish                shell completion, tool ids included
   jig version                                 version, commit, Go and platform
 

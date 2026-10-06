@@ -1,0 +1,38 @@
+{
+  "name": "jig",
+  "version": "1.1.0",
+  "description": "Makes Claude search the workspace's script registry before writing a new script: rules at session start, a hook that bounces new script files back to `jig ls`, and skills to reuse, scaffold and register tools.",
+  "author": {
+    "name": "the jig authors",
+    "url": "https://github.com/vlle/jig"
+  },
+  "homepage": "https://github.com/vlle/jig",
+  "repository": "https://github.com/vlle/jig",
+  "license": "MIT",
+  "keywords": ["scripts", "registry", "tooling", "cli", "hooks", "skills"],
+  "skills": ["./agent/skills/"],
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/bin/jig hook",
+            "timeout": 300
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/bin/jig hook"
+          }
+        ]
+      }
+    ]
+  }
+}

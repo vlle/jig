@@ -22,6 +22,7 @@ scripts and make, just, npm and task targets. They count as existing tools.
 
 **Report the result to the user before doing anything else.** If `jig` is missing or
 there is no `jig.yml` above the current directory, say so and stop — do not improvise.
+`jig init` (or `/jig:setup` with the Claude Code plugin) creates a workspace.
 
 ## Step 2 — decide
 

@@ -40,6 +40,9 @@ Every box is a yes/no question with a way to check it.
 
 - [ ] CHANGELOG.md: the `Unreleased` section is renamed to the version and dated, and the
       compare link at the bottom is added.
+- [ ] `.claude-plugin/plugin.json` has the same version; the plugin launcher downloads the
+      release with that number. `TestPluginManifest` fails until they match.
+- [ ] `claude plugin validate .` passes.
 - [ ] README.md mentions every new command and flag; `jig help` matches.
 - [ ] `jig agent rules` and `jig agent skill` describe the current workflow.
 
@@ -58,6 +61,10 @@ Finally, from outside the repository:
 ```bash
 cd "$(mktemp -d)" && go install github.com/vlle/jig@v1.2.0 && jig version
 ```
+
+And the plugin: `claude plugin marketplace update jig && claude plugin update jig@jig`, then
+in a new session inside a workspace `jig version` from Claude's shell prints the new version
+(with no other `jig` on PATH).
 
 If the workflow fails, fix it on `main`, delete the tag (`git push --delete origin v1.2.0`,
 `git tag -d v1.2.0`) and tag again. A tag that `go install` has already fetched is cached

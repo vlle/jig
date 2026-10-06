@@ -462,6 +462,41 @@ func TestHook(t *testing.T) {
 	}
 }
 
+func TestSessionStartHook(t *testing.T) {
+	t.Parallel()
+	s := newSandbox(t)
+
+	start := func(cwd string, env ...string) string {
+		input, _ := json.Marshal(map[string]string{"hook_event_name": "SessionStart", "cwd": cwd, "source": "startup"})
+		r := s.jigWith(cwd, env, string(input), "hook")
+		r.ok(t)
+		return r.stdout
+	}
+
+	var out struct {
+		HookSpecificOutput struct {
+			HookEventName     string `json:"hookEventName"`
+			AdditionalContext string `json:"additionalContext"`
+		} `json:"hookSpecificOutput"`
+	}
+	if err := json.Unmarshal([]byte(start(s.root)), &out); err != nil {
+		t.Fatal(err)
+	}
+	if out.HookSpecificOutput.HookEventName != "SessionStart" {
+		t.Fatalf("hookEventName: %q", out.HookSpecificOutput.HookEventName)
+	}
+	context := out.HookSpecificOutput.AdditionalContext
+	contains(t, "context", context, s.root+" (3 tools registered)")
+	contains(t, "context", context, "Search before you write")
+
+	if got := start(t.TempDir(), "JIG_ROOT="); got != "" {
+		t.Fatalf("outside a workspace the hook must stay silent, got %s", got)
+	}
+	if got := start(s.root, "JIG_HOOK=off"); got != "" {
+		t.Fatalf("JIG_HOOK=off must stay silent, got %s", got)
+	}
+}
+
 func TestDemoPlain(t *testing.T) {
 	t.Parallel()
 	r := newSandbox(t).jig("demo", "--only", "fan", "--speed", "20")

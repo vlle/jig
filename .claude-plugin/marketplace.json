@@ -1,0 +1,15 @@
+{
+  "name": "jig",
+  "description": "jig, a registry for the scripts in your workspace, packaged for Claude Code.",
+  "owner": {
+    "name": "vlle",
+    "url": "https://github.com/vlle"
+  },
+  "plugins": [
+    {
+      "name": "jig",
+      "source": "./",
+      "description": "Search the script registry before writing a new script; reuse, scaffold and register tools with jig."
+    }
+  ]
+}
